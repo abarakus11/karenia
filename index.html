@@ -987,6 +987,7 @@ async function sendMsg(txt) {
     }
 
     extractMemories(msg, reply);
+    await afterChatReply(msg, reply, 'msgs', history);
 
     if (DB.waAuto) {
       sendWhatsApp('🤖 *KAREN*\n\n' + reply.slice(0, 1400)).catch(() => {});
@@ -1129,6 +1130,7 @@ Comportamento:
 - Não invente emoções ou problemas do usuário (confusão, tristeza, etc.) a menos que ele mencione.
 - Não critique como o usuário escreveu ou perguntou.
 - Se perguntarem o que você sabe fazer, liste suas capacidades: conversar, planejar, escrever textos, ajudar com código, gerar imagens (diga: "gere uma imagem de..."), lembrar informações, criar lembretes (diga: "me lembre de..."), Assistente Remoto via WhatsApp.
+- WhatsApp: quando o usuário pedir envio no WhatsApp, confirme a mensagem entre aspas ou após ">". O SISTEMA envia automaticamente — você não envia manualmente, mas pode dizer "vou enviar agora no WhatsApp" pois o sistema executa em seguida.
 - Seja útil, direta e amigável.
 - Você aprende continuamente pelas memórias. Conversas antigas NÃO ficam salvas — só o que foi ensinado nas memórias permanece. Use sempre as memórias como sua base de conhecimento.`;
   if (mems.length) {
@@ -1513,6 +1515,68 @@ async function testWhatsApp() {
   }
 }
 
+function shouldSendWhatsAppNow(userMsg, reply, chatHist) {
+  const rep = (reply || '').toLowerCase();
+  const user = (userMsg || '').trim();
+  if (/vou enviar.*whatsapp|enviando agora.*whatsapp|mandarei.*whatsapp/i.test(rep)) return true;
+  if (/manda.*whatsapp|envia.*whatsapp|me (?:manda|avise|envie).*whatsapp|whatsapp.*(?:agora|já|ja)/i.test(userMsg)) return true;
+  if (/^(sim|ok|certo|pode|confirmo|isso|manda|envia|a partir de agora)/i.test(user)) {
+    const recent = (chatHist || []).slice(-8);
+    return recent.some(h =>
+      h.role === 'assistant' && /whatsapp|1 minuto|vou enviar|lembrete/i.test(h.content)
+    );
+  }
+  return false;
+}
+
+function extractWhatsAppBody(reply, userMsg) {
+  for (const line of (reply || '').split('\n')) {
+    const m = line.match(/>\s*(.+)/);
+    if (m) return m[1].replace(/✅/g, '').trim();
+  }
+  const m2 = (reply || '').match(/mensagem:\s*(.+?)(?:\n|✅|$)/is);
+  if (m2) return m2[1].trim();
+  const clean = (reply || '').replace(/vou enviar.*whatsapp.*?:\s*/i, '').replace(/✅/g, '').trim();
+  if (clean.length > 10 && clean.length < 600) return clean;
+  return userMsg.slice(0, 400);
+}
+
+function appendWaStatus(containerId, text) {
+  const lastBody = document.querySelector(`#${containerId} .mwrap.assistant:last-child .mbody`);
+  if (!lastBody || lastBody.querySelector('.wasent')) return;
+  const badge = document.createElement('div');
+  badge.className = 'memsaved wasent';
+  badge.innerHTML = text;
+  lastBody.appendChild(badge);
+}
+
+async function executeWhatsAppIfNeeded(userMsg, reply, containerId, chatHist) {
+  if (!shouldSendWhatsAppNow(userMsg, reply, chatHist)) return;
+  saveWaConfig();
+  if (!DB.waPhone || !DB.waKey) {
+    appendWaStatus(containerId, '⚠️ Configure WhatsApp em ⚙️ Configurações');
+    return;
+  }
+  const body = extractWhatsAppBody(reply, userMsg);
+  try {
+    await sendWhatsApp('📲 *KAREN — Lembrete*\n\n' + body);
+    appendWaStatus(containerId, '✅ WhatsApp enviado!');
+  } catch (err) {
+    appendWaStatus(containerId, '⚠️ WhatsApp: ' + fmtErr(err));
+  }
+}
+
+function detectReminderIntent(msg) {
+  return /whatsapp|zap|lembrete|me (?:manda|avise|lembr)|reuni[aã]o|compromisso|tarefa/i.test(msg || '');
+}
+
+async function afterChatReply(userMsg, reply, containerId, chatHist) {
+  await executeWhatsAppIfNeeded(userMsg, reply, containerId, chatHist);
+  if (containerId === 'remote-msgs' || detectReminderIntent(userMsg) || detectNotifyPreference(userMsg).mode !== 'default') {
+    await saveReminderFromRemote(userMsg, reply, containerId);
+  }
+}
+
 // ── Assistente Remoto — chat dedicado + WhatsApp 1 dia antes ──
 const ADVANCE_MS = 24 * 60 * 60 * 1000;
 
@@ -1670,7 +1734,13 @@ function addRemoteThinking(label = 'Organizando lembrete…') {
   return id;
 }
 
-async function saveReminderFromRemote(userMsg, reply) {
+function scheduleSoonReminder(reminder) {
+  if (!reminder?.notifyAt || reminder.advanceSent) return;
+  const delay = Math.max(0, new Date(reminder.notifyAt).getTime() - Date.now());
+  setTimeout(() => sendAdvanceReminders().catch(() => {}), delay);
+}
+
+async function saveReminderFromRemote(userMsg, reply, containerId = 'remote-msgs') {
   const listQuery = /quais lembretes|meus lembretes|lista.*lembrete/i.test(userMsg);
   if (listQuery) return;
 
@@ -1707,13 +1777,14 @@ KAREN: ${reply.slice(0, 300)}` }],
     addReminder(reminder);
     const saved = DB.reminders[DB.reminders.length - 1];
 
-    const lastBody = document.querySelector('#remote-msgs .mwrap.assistant:last-child .mbody');
+    const lastBody = document.querySelector(`#${containerId} .mwrap.assistant:last-child .mbody`);
     if (lastBody && !lastBody.querySelector('.remsaved')) {
       const badge = document.createElement('div');
       badge.className = 'memsaved remsaved';
       badge.innerHTML = `🔔 Salvo! <strong>${fmtNotifyLabel(saved)}</strong>`;
       lastBody.appendChild(badge);
     }
+    if (saved.notifyMode === 'soon') scheduleSoonReminder(saved);
     renderRemoteList();
   } catch { /* silencioso */ }
 }
@@ -1755,7 +1826,7 @@ async function sendRemoteMsg(txt) {
     if (!reply) throw new Error('Resposta vazia.');
     appendMsg('assistant', reply, 'remote-msgs');
     remoteHistory.push({ role: 'assistant', content: reply });
-    await saveReminderFromRemote(msg, reply);
+    await afterChatReply(msg, reply, 'remote-msgs', remoteHistory);
     updateRemoteBadge();
   } catch (err) {
     removeThinking(tid);
