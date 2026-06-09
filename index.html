@@ -2268,20 +2268,7 @@ function newChat() {
 }
 function clearChat() { newChat(); }
 
-function renderMemPreview() {
-  const el = document.getElementById('sconv');
-  if (!el) return;
-  const mems = DB.memories.slice(-8).reverse();
-  if (!mems.length) {
-    el.innerHTML = '<div style="padding:8px 4px;font-size:12px;color:var(--text2)">Converse — cada troca vira memória</div>';
-    return;
-  }
-  el.innerHTML = mems.map(m => `
-    <div class="mpitem" onclick="setPage('memory')" title="Ver memórias">
-      <div class="mptag">${esc(m.cat || 'geral')}</div>
-      ${esc(m.text.slice(0, 72))}${m.text.length > 72 ? '…' : ''}
-    </div>`).join('');
-}
+function renderMemPreview() {}
 
 // ── Dashboard ──
 function updateDashboard() {
