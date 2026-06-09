@@ -30,9 +30,13 @@ input,textarea{font-family:inherit;color:inherit;background:none;border:none;out
 .lsub{font-size:10px;color:var(--text3);letter-spacing:.6px;text-transform:uppercase;}
 .snew{margin:12px 12px 6px;padding:10px 14px;background:var(--ag);border:1px solid rgba(124,110,248,.22);border-radius:8px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--accent2);cursor:pointer;transition:all .2s;}
 .snew:hover{background:rgba(124,110,248,.22);}
-.wa-side{margin:6px 12px 10px;padding:10px 14px;background:rgba(37,211,102,.1);border:1px solid rgba(37,211,102,.28);border-radius:8px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#3ddc84;cursor:pointer;transition:all .2s;width:calc(100% - 24px);}
+.wa-side{margin:6px 12px 6px;padding:10px 14px;background:rgba(37,211,102,.1);border:1px solid rgba(37,211,102,.28);border-radius:8px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#3ddc84;cursor:pointer;transition:all .2s;width:calc(100% - 24px);}
 .wa-side:hover{background:rgba(37,211,102,.2);transform:translateY(-1px);}
 .wa-side:disabled{opacity:.45;cursor:not-allowed;transform:none;}
+.remote-side{margin:6px 12px 10px;padding:10px 14px;background:rgba(240,185,66,.1);border:1px solid rgba(240,185,66,.32);border-radius:8px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--amber);cursor:pointer;transition:all .2s;width:calc(100% - 24px);}
+.remote-side:hover{background:rgba(240,185,66,.18);transform:translateY(-1px);}
+.remote-side:disabled{opacity:.45;cursor:not-allowed;transform:none;}
+.remote-badge{margin-left:auto;font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(240,185,66,.2);color:var(--amber);}
 .hbtn.wa{color:#3ddc84;}
 .hbtn.wa:hover{background:rgba(37,211,102,.1);border-color:rgba(37,211,102,.22);}
 .mact.wa{color:#3ddc84;}
@@ -269,6 +273,9 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
   <div class="nitem"        id="nav-memory"     onclick="setPage('memory')">    <span class="nico">🧠</span> Memórias</div>
   <div class="nitem"        id="nav-settings"   onclick="setPage('settings')">  <span class="nico">⚙️</span> Configurações</div>
   <button class="wa-side" id="wa-side" onclick="sendLastToWhatsApp()" title="Enviar última resposta da KAREN">📱 Enviar no WhatsApp</button>
+  <button class="remote-side" id="remote-btn" onclick="sendRemoteAssistant()" title="Enviar lembretes e tarefas no seu WhatsApp">
+    <span id="remote-label">📲 Assistente Remoto</span><span class="remote-badge" id="remote-badge">0</span>
+  </button>
   <div class="ssec" style="margin-top:10px">Aprendizado</div>
   <div id="sconv" class="mem-preview"></div>
   <div class="sbot">
@@ -478,6 +485,10 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
           <div><div class="stlb">Auto-enviar respostas</div><div class="stsb">Manda cada resposta da KAREN pro WhatsApp</div></div>
           <div class="toggle" id="tgl-wa" onclick="toggleWaAuto(this)"><div class="tknob"></div></div>
         </div>
+        <div class="strow">
+          <div><div class="stlb">Assistente Remoto automático</div><div class="stsb">Envia lembretes no WhatsApp quando chegar o horário</div></div>
+          <div class="toggle on" id="tgl-remote" onclick="toggleRemoteAuto(this)"><div class="tknob"></div></div>
+        </div>
       </div>
 
       <div class="stsec">
@@ -543,6 +554,10 @@ const DB = {
   set waKey(v)   { localStorage.setItem('k_wa_key', v); },
   get waAuto()   { return localStorage.getItem('k_wa_auto') === '1'; },
   set waAuto(v)  { localStorage.setItem('k_wa_auto', v ? '1' : '0'); },
+  get reminders(){ try { return JSON.parse(localStorage.getItem('k_reminders') || '[]'); } catch { return []; } },
+  set reminders(v){ localStorage.setItem('k_reminders', JSON.stringify(v)); },
+  get remoteAuto(){ return localStorage.getItem('k_remote_auto') !== '0'; },
+  set remoteAuto(v){ localStorage.setItem('k_remote_auto', v ? '1' : '0'); },
 };
 
 // ── State ──
@@ -598,6 +613,8 @@ document.addEventListener('DOMContentLoaded', () => {
   loadWaConfig();
   loadPuterToken();
   updatePuterStatus();
+  updateRemoteBadge();
+  startReminderWatcher();
   if (!DB.puterToken) setTimeout(showSetupModal, 400);
   setTimeout(() => document.getElementById('minput').focus(), 200);
 });
@@ -917,6 +934,10 @@ async function sendMsg(txt) {
 
     extractMemories(msg, reply);
 
+    if (detectReminderRequest(msg)) {
+      saveReminderFromMessage(msg).catch(() => {});
+    }
+
     if (DB.waAuto) {
       sendWhatsApp('🤖 *KAREN*\n\n' + reply.slice(0, 1400)).catch(() => {});
     }
@@ -1057,7 +1078,7 @@ Comportamento:
 - Mantenha coerência com o contexto — não contradiga o que você ou o usuário disseram antes.
 - Não invente emoções ou problemas do usuário (confusão, tristeza, etc.) a menos que ele mencione.
 - Não critique como o usuário escreveu ou perguntou.
-- Se perguntarem o que você sabe fazer, liste suas capacidades: conversar, planejar, escrever textos, ajudar com código, gerar imagens (diga: "gere uma imagem de..."), lembrar informações, enviar respostas por WhatsApp.
+- Se perguntarem o que você sabe fazer, liste suas capacidades: conversar, planejar, escrever textos, ajudar com código, gerar imagens (diga: "gere uma imagem de..."), lembrar informações, criar lembretes (diga: "me lembre de..."), Assistente Remoto via WhatsApp.
 - Seja útil, direta e amigável.
 - Você aprende continuamente pelas memórias. Conversas antigas NÃO ficam salvas — só o que foi ensinado nas memórias permanece. Use sempre as memórias como sua base de conhecimento.`;
   if (mems.length) {
@@ -1334,9 +1355,17 @@ function loadWaConfig() {
   const phone = document.getElementById('wa-phone');
   const key = document.getElementById('wa-key');
   const tgl = document.getElementById('tgl-wa');
+  const tglRemote = document.getElementById('tgl-remote');
   if (phone) phone.value = DB.waPhone;
   if (key) key.value = DB.waKey;
   if (tgl) tgl.classList.toggle('on', DB.waAuto);
+  if (tglRemote) tglRemote.classList.toggle('on', DB.remoteAuto);
+  updateRemoteBadge();
+}
+
+function toggleRemoteAuto(el) {
+  el.classList.toggle('on');
+  DB.remoteAuto = el.classList.contains('on');
 }
 
 function saveWaConfig() {
@@ -1429,6 +1458,157 @@ async function testWhatsApp() {
   } catch (err) {
     alert('Erro: ' + fmtErr(err));
   }
+}
+
+// ── Assistente Remoto — lembretes via WhatsApp ──
+const REMINDER_PATTERNS = [
+  /me\s+lembr/i, /lembrete/i, /n[aã]o\s+esquec/i, /me\s+avise/i,
+  /agendar/i, /lembrar\s+(?:de|da|do)/i, /preciso\s+(?:lembrar|fazer)/i,
+  /me\s+manda\s+(?:um\s+)?lembrete/i, /anot[ae]\s+(?:pra|para)\s+(?:me\s+)?lembrar/i,
+];
+
+function detectReminderRequest(msg) {
+  return REMINDER_PATTERNS.some(re => re.test(msg));
+}
+
+function getActiveReminders() {
+  return DB.reminders.filter(r => !r.done);
+}
+
+function updateRemoteBadge() {
+  const el = document.getElementById('remote-badge');
+  if (!el) return;
+  const n = getActiveReminders().length;
+  el.textContent = String(n);
+  el.style.display = n ? 'inline' : 'none';
+}
+
+function fmtReminderWhen(iso) {
+  if (!iso) return 'quando solicitado';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d)) return 'sem horário';
+    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch { return 'sem horário'; }
+}
+
+function addReminder({ text, dueAt, type }) {
+  const list = DB.reminders;
+  list.push({
+    id: 'rem_' + Date.now(),
+    text: text.slice(0, 300),
+    dueAt: dueAt || null,
+    type: type || 'geral',
+    done: false,
+    createdAt: new Date().toISOString(),
+  });
+  DB.reminders = list.slice(-50);
+  updateRemoteBadge();
+}
+
+async function saveReminderFromMessage(userMsg) {
+  try {
+    const res = await puterChatRequest(
+      [{ role: 'user', content: `Extraia o lembrete desta mensagem. Retorne SOMENTE JSON:
+{"text":"descrição clara do lembrete","dueAt":"ISO8601 com fuso local ou null","type":"reuniao|tarefa|geral"}
+Calcule dueAt se houver horário/data (ex: amanhã 15h, daqui 2 horas). Se não houver, null.
+
+Mensagem: ${userMsg.slice(0, 400)}` }],
+      { model: 'gpt-4o-mini', max_tokens: 200, stream: false }
+    );
+    const raw = (typeof res === 'string' ? res : extractPuterReply(res)).trim()
+      .replace(/```json|```/g, '').trim();
+    const data = JSON.parse(raw);
+    if (!data?.text?.trim()) return;
+    addReminder({ text: data.text.trim(), dueAt: data.dueAt || null, type: data.type });
+    const lastBody = document.querySelector('#msgs .mwrap.assistant:last-child .mbody');
+    if (lastBody && !lastBody.querySelector('.remsaved')) {
+      const badge = document.createElement('div');
+      badge.className = 'memsaved remsaved';
+      badge.innerHTML = `🔔 Lembrete salvo — use <strong>Assistente Remoto</strong> ou aguarde o horário`;
+      lastBody.appendChild(badge);
+    }
+  } catch {
+    addReminder({ text: userMsg.slice(0, 200), dueAt: null, type: 'geral' });
+  }
+}
+
+function buildRemoteMessage(reminders) {
+  const reunioes = reminders.filter(r => r.type === 'reuniao');
+  const tarefas = reminders.filter(r => r.type === 'tarefa');
+  const outros = reminders.filter(r => r.type !== 'reuniao' && r.type !== 'tarefa');
+  let msg = '📲 *KAREN — Assistente Remoto*\n\nOlá! Seguem seus lembretes:\n';
+
+  const section = (tit, items) => {
+    if (!items.length) return '';
+    return `\n*${tit}*\n` + items.map((r, i) =>
+      `${i + 1}. ${r.text}${r.dueAt ? ' — _' + fmtReminderWhen(r.dueAt) + '_' : ''}`
+    ).join('\n');
+  };
+
+  msg += section('📅 Reuniões', reunioes);
+  msg += section('✅ Tarefas', tarefas);
+  msg += section('🔔 Lembretes', outros);
+  msg += '\n\n_Enviado pela KAREN AI · Assistente Remoto_';
+  return msg.slice(0, 1500);
+}
+
+async function sendRemoteAssistant(markAuto = false) {
+  const btn = document.getElementById('remote-btn');
+  saveWaConfig();
+  const active = getActiveReminders();
+  if (!active.length) {
+    if (!markAuto) alert('Nenhum lembrete pendente.\n\nPeça à KAREN: "me lembre da reunião às 15h" ou "lembrete: comprar leite".');
+    return;
+  }
+  const label = document.getElementById('remote-label');
+  if (btn && !markAuto) { btn.disabled = true; if (label) label.textContent = '📲 Enviando...'; }
+  try {
+    const toSend = markAuto
+      ? active.filter(r => r.dueAt && new Date(r.dueAt) <= new Date())
+      : active;
+    if (!toSend.length) return;
+
+    await sendWhatsApp(buildRemoteMessage(toSend));
+    const list = DB.reminders;
+    const sentIds = new Set(toSend.map(r => r.id));
+    for (const r of list) {
+      if (sentIds.has(r.id)) {
+        r.notifiedAt = new Date().toISOString();
+        if (markAuto) r.done = true;
+      }
+    }
+    DB.reminders = list;
+    updateRemoteBadge();
+
+    if (btn && !markAuto) {
+      if (label) label.textContent = '✅ Enviado!';
+      setTimeout(() => { if (label) label.textContent = '📲 Assistente Remoto'; btn.disabled = false; }, 2500);
+    }
+    if (!markAuto) closeSidebar();
+  } catch (err) {
+    if (btn && !markAuto) { if (label) label.textContent = '📲 Assistente Remoto'; btn.disabled = false; }
+    if (!markAuto) {
+      appendMsg('assistant', '⚠️ Assistente Remoto: ' + fmtErr(err));
+      setPage('chat');
+    }
+  }
+}
+
+let reminderTimer = null;
+function startReminderWatcher() {
+  if (reminderTimer) clearInterval(reminderTimer);
+  reminderTimer = setInterval(() => {
+    if (!DB.remoteAuto || !DB.waPhone || !DB.waKey) return;
+    const due = getActiveReminders().filter(r => r.dueAt && new Date(r.dueAt) <= new Date());
+    if (due.length) sendRemoteAssistant(true).catch(() => {});
+  }, 60000);
+  setTimeout(() => {
+    if (DB.remoteAuto && DB.waPhone && DB.waKey) {
+      const due = getActiveReminders().filter(r => r.dueAt && new Date(r.dueAt) <= new Date());
+      if (due.length) sendRemoteAssistant(true).catch(() => {});
+    }
+  }, 3000);
 }
 
 // ── Sugestões ──
