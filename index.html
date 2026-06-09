@@ -1538,21 +1538,62 @@ function fmtReminderWhen(iso) {
   } catch { return 'sem data'; }
 }
 
-function calcNotifyAt(dueAt) {
-  if (!dueAt) return null;
-  const due = new Date(dueAt);
-  if (isNaN(due)) return null;
-  return new Date(due.getTime() - ADVANCE_MS).toISOString();
+function detectNotifyPreference(text) {
+  const t = (text || '').toLowerCase();
+  if (/1\s*min(?:uto)?\s*antes|antes\s+(?:da|do|de|o)\s+.*1\s*min/i.test(t)) {
+    return { mode: 'before', ms: 60000 };
+  }
+  const minBefore = t.match(/(\d+)\s*min(?:utos?)?\s*antes/);
+  if (minBefore) return { mode: 'before', ms: parseInt(minBefore[1], 10) * 60000 };
+
+  if (/(?:em|daqui\s+a?|avis(?:e|ar)\s+(?:em|com)|me\s+avise\s+em)\s*1\s*min(?:uto)?/i.test(t)) {
+    return { mode: 'soon', ms: 60000 };
+  }
+  const minSoon = t.match(/(?:em|daqui\s+a?|avis(?:e|ar)\s+(?:em|com))\s*(\d+)\s*min(?:utos?)?/i);
+  if (minSoon) return { mode: 'soon', ms: parseInt(minSoon[1], 10) * 60000 };
+
+  if (/agora|imediatamente|já\b|ja\b/i.test(t)) return { mode: 'soon', ms: 30000 };
+
+  return { mode: 'default', ms: ADVANCE_MS };
 }
 
-function addReminder({ text, dueAt, type }) {
-  const notifyAt = calcNotifyAt(dueAt);
+function calcNotifyAt(dueAt, pref = { mode: 'default', ms: ADVANCE_MS }) {
+  const now = Date.now();
+  if (pref.mode === 'soon') {
+    return new Date(now + Math.max(pref.ms, 15000)).toISOString();
+  }
+  if (dueAt) {
+    const due = new Date(dueAt);
+    if (!isNaN(due)) {
+      const advance = pref.mode === 'before' ? pref.ms : ADVANCE_MS;
+      let notify = new Date(due.getTime() - advance);
+      if (notify.getTime() < now && pref.mode === 'before') {
+        notify = new Date(now + 15000);
+      }
+      return notify.toISOString();
+    }
+  }
+  return pref.mode === 'soon' ? new Date(now + 15000).toISOString() : null;
+}
+
+function fmtNotifyLabel(reminder) {
+  if (!reminder?.notifyAt) return 'sem aviso automático';
+  const when = fmtReminderWhen(reminder.notifyAt);
+  if (reminder.notifyMode === 'soon') return `WhatsApp em ${when} (pedido urgente)`;
+  if (reminder.notifyMode === 'before') return `WhatsApp em ${when} (antes do evento)`;
+  return `WhatsApp em ${when} (1 dia antes)`;
+}
+
+function addReminder({ text, dueAt, type, notifyPref }) {
+  const pref = notifyPref || detectNotifyPreference(text);
+  const notifyAt = calcNotifyAt(dueAt, pref);
   const list = DB.reminders;
   list.push({
     id: 'rem_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
     text: text.slice(0, 300),
     dueAt: dueAt || null,
     notifyAt,
+    notifyMode: pref.mode,
     type: type || 'geral',
     done: false,
     advanceSent: false,
@@ -1572,7 +1613,7 @@ function renderRemoteList() {
   }
   el.innerHTML = '<strong style="color:var(--amber)">Agendados:</strong><br>' +
     active.slice(0, 6).map(r => {
-      const wa = r.notifyAt ? `WhatsApp em ${fmtReminderWhen(r.notifyAt)}` : 'sem aviso automático';
+      const wa = fmtNotifyLabel(r);
       return `• ${esc(r.text.slice(0, 60))} — ${fmtReminderWhen(r.dueAt)}<br><span style="font-size:11px">${wa}</span>`;
     }).join('<br><br>');
 }
@@ -1597,8 +1638,10 @@ function buildRemoteSystem() {
 
 Função:
 - Ajudar o usuário a criar e gerenciar lembretes de reuniões, tarefas e compromissos.
-- Cada lembrete salvo será enviado automaticamente no WhatsApp do usuário com 1 DIA DE ANTECEDÊNCIA.
-- Confirme sempre: o quê, data/hora do compromisso, e que o aviso no WhatsApp será 1 dia antes.
+- Padrão: aviso no WhatsApp com 1 DIA DE ANTECEDÊNCIA antes do compromisso.
+- Se o usuário pedir prazo curto ("em 1 minuto", "daqui 5 minutos", "agora"), ACEITE e confirme o horário exato do aviso — o sistema envia no prazo pedido.
+- Se pedir "X minutos antes" do evento, use esse intervalo antes do compromisso.
+- Confirme sempre: o quê, data/hora do compromisso, e quando será o aviso no WhatsApp.
 - Se faltar data ou hora, pergunte antes de confirmar.
 - Se perguntarem "quais lembretes tenho", liste os agendados abaixo.
 - Responda em português do Brasil, de forma clara e objetiva.`;
@@ -1635,9 +1678,10 @@ async function saveReminderFromRemote(userMsg, reply) {
     const res = await puterChatRequest(
       [{ role: 'user', content: `Analise se o usuário pediu para CRIAR um novo lembrete/compromisso.
 Retorne SOMENTE JSON:
-{"create":true|false,"text":"descrição","dueAt":"ISO8601 local do COMPROMISSO ou null","type":"reuniao|tarefa|geral"}
+{"create":true|false,"text":"descrição","dueAt":"ISO8601 local do COMPROMISSO ou null","type":"reuniao|tarefa|geral","notifyMode":"default|soon|before","notifyMinutes":null}
 create=false se for só pergunta, listagem ou conversa sem novo compromisso.
-dueAt = data/hora DO EVENTO (não do aviso). Calcule datas relativas (amanhã, sexta, dia 15).
+dueAt = data/hora DO EVENTO. notifyMode: default=1 dia antes; soon=em X minutos a partir de agora; before=X minutos antes do evento.
+notifyMinutes: número se soon/before (ex: 1 para 1 minuto).
 
 Usuário: ${userMsg.slice(0, 400)}
 KAREN: ${reply.slice(0, 300)}` }],
@@ -1648,13 +1692,26 @@ KAREN: ${reply.slice(0, 300)}` }],
     const data = JSON.parse(raw);
     if (!data?.create || !data?.text?.trim()) return;
 
-    addReminder({ text: data.text.trim(), dueAt: data.dueAt || null, type: data.type });
+    let pref = detectNotifyPreference(userMsg + ' ' + reply);
+    if (data.notifyMode === 'soon' || data.notifyMode === 'before') {
+      const mins = parseInt(data.notifyMinutes, 10) || 1;
+      pref = { mode: data.notifyMode, ms: mins * 60000 };
+    }
+
+    const reminder = {
+      text: data.text.trim(),
+      dueAt: data.dueAt || null,
+      type: data.type,
+      notifyPref: pref,
+    };
+    addReminder(reminder);
+    const saved = DB.reminders[DB.reminders.length - 1];
+
     const lastBody = document.querySelector('#remote-msgs .mwrap.assistant:last-child .mbody');
     if (lastBody && !lastBody.querySelector('.remsaved')) {
       const badge = document.createElement('div');
       badge.className = 'memsaved remsaved';
-      const notify = data.dueAt ? fmtReminderWhen(calcNotifyAt(data.dueAt)) : 'quando houver data';
-      badge.innerHTML = `🔔 Salvo! WhatsApp em <strong>${notify}</strong> (1 dia antes)`;
+      badge.innerHTML = `🔔 Salvo! <strong>${fmtNotifyLabel(saved)}</strong>`;
       lastBody.appendChild(badge);
     }
     renderRemoteList();
@@ -1713,14 +1770,16 @@ async function sendRemoteMsg(txt) {
 function getDueAdvanceReminders() {
   const now = new Date();
   return getActiveReminders().filter(r =>
-    r.notifyAt && new Date(r.notifyAt) <= now && !r.advanceSent && r.dueAt
+    r.notifyAt && new Date(r.notifyAt) <= now && !r.advanceSent
   );
 }
 
 function buildAdvanceMessage(reminders) {
-  let msg = '📲 *KAREN — Assistente Remoto*\n\n⏰ *Lembrete com 1 dia de antecedência:*\n\n';
+  const urgent = reminders.some(r => r.notifyMode === 'soon' || r.notifyMode === 'before');
+  const tit = urgent ? '⏰ *Lembrete:*' : '⏰ *Lembrete com 1 dia de antecedência:*';
+  let msg = `📲 *KAREN — Assistente Remoto*\n\n${tit}\n\n`;
   msg += reminders.map((r, i) => {
-    const quando = fmtReminderWhen(r.dueAt);
+    const quando = r.dueAt ? fmtReminderWhen(r.dueAt) : 'em breve';
     return `${i + 1}. *${r.text}*\n   📅 Compromisso: ${quando}`;
   }).join('\n\n');
   msg += '\n\n_Não esqueça! Enviado pela KAREN AI_';
@@ -1769,8 +1828,8 @@ function startReminderWatcher() {
     expirePastReminders();
     if (DB.remoteAuto) sendAdvanceReminders().catch(() => {});
   };
-  reminderTimer = setInterval(tick, 60000);
-  setTimeout(tick, 3000);
+  reminderTimer = setInterval(tick, 15000);
+  setTimeout(tick, 2000);
 }
 
 // ── Sugestões ──
