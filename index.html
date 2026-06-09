@@ -97,16 +97,13 @@ input,textarea{font-family:inherit;color:inherit;background:none;border:none;out
 .mwrap.user .mbody{display:flex;flex-direction:column;align-items:flex-end;}
 .bubble{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:11px 15px;font-size:14px;line-height:1.78;color:var(--text);display:inline-block;max-width:100%;word-break:break-word;}
 .bubble img{max-width:100%;border-radius:8px;display:block;margin-top:4px;}
-.bubble video{max-width:100%;border-radius:8px;display:block;margin-top:4px;background:#000;}
-.bubble .img-cap,.bubble .vid-cap{font-size:12px;color:var(--text3);margin-bottom:6px;}
+.bubble .img-cap{font-size:12px;color:var(--text3);margin-bottom:6px;}
 .mwrap.user .bubble{background:var(--ag2);border-color:rgba(124,110,248,.18);}
 .macts{display:flex;gap:3px;margin-top:5px;opacity:0;transition:opacity .18s;}
 .mwrap:hover .macts{opacity:1;}
 .mact{padding:3px 8px;border-radius:6px;font-size:11px;color:var(--text3);cursor:pointer;transition:all .15s;border:1px solid transparent;}
 .mact:hover{background:var(--bg3);color:var(--text2);border-color:var(--border);}
 .memsaved{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;font-size:11px;color:var(--green);background:rgba(34,201,138,.07);border:1px solid rgba(34,201,138,.14);margin-top:4px;}
-.vid-demo{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;font-size:11px;color:var(--amber);background:rgba(240,185,66,.1);border:1px solid rgba(240,185,66,.22);margin-top:6px;}
-.vid-demo a{color:var(--accent2);text-decoration:underline;}
 .streaming::after{content:'▋';animation:cur .65s step-end infinite;color:var(--accent2);}
 @keyframes cur{50%{opacity:0}}
 .tdots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);opacity:.35;animation:td 1.1s infinite;}
@@ -357,9 +354,6 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
           <button class="scard" onclick="suggest('Gere uma imagem de um robô assistente feminino com visual futurista roxo')">
             <div class="sico">🎨</div><div class="stit">Gerar imagem</div><div class="sdesc">IA cria a arte pra você</div>
           </button>
-          <button class="scard" onclick="suggest('Gere um vídeo de um carro esportivo acelerando em uma estrada à noite')">
-            <div class="sico">🎬</div><div class="stit">Gerar vídeo</div><div class="sdesc">Clipe IA com Sora/Veo</div>
-          </button>
           <button class="scard" onclick="suggest('O que você sabe sobre mim e meus projetos até agora?')">
             <div class="sico">🧠</div><div class="stit">Minhas memórias</div><div class="sdesc">Contexto que aprendi</div>
           </button>
@@ -382,7 +376,7 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
           <button class="itool"    id="t-voice"  onclick="toggleTool('voice')" >🔊 Voz</button>
         </div>
         <textarea class="ifield" id="minput"
-          placeholder="Converse, gere imagens ou vídeos... (Enter envia)"
+          placeholder="Converse com a KAREN... (Enter para enviar, Shift+Enter nova linha)"
           rows="1"
           onkeydown="handleKey(event)"
           oninput="autoResize(this)"></textarea>
@@ -456,8 +450,6 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
           <div class="agt"><div class="adot on"></div><div class="aname">Streaming</div><div class="astatus">tempo real</div></div>
           <div class="agt"><div class="adot on"></div><div class="aname">Voz (STT)</div><div class="astatus">Web Speech API</div></div>
           <div class="agt"><div class="adot on"></div><div class="aname">TTS</div><div class="astatus">Web Speech API</div></div>
-          <div class="agt"><div class="adot on"></div><div class="aname">Imagens</div><div class="astatus">gpt-image-2 · Flux</div></div>
-          <div class="agt"><div class="adot on"></div><div class="aname">Vídeos</div><div class="astatus">Sora · Veo · Wan</div></div>
           <div class="agt"><div class="adot on"></div><div class="aname">WhatsApp</div><div class="astatus">CallMeBot API</div></div>
         </div>
         <div class="dc">
@@ -525,23 +517,6 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
           <button class="mopt" onclick="setModel(this,'gpt-4o')">GPT-4o</button>
           <button class="mopt" onclick="setModel(this,'gpt-4o-mini')">GPT-4o mini</button>
         </div>
-      </div>
-
-      <div class="stsec">
-        <div class="sttit">Modelo de vídeo</div>
-        <div class="stdesc">Geração de clipes via puter.ai.txt2vid() — pode levar alguns minutos</div>
-        <div class="mopts" id="vid-mopts">
-          <button class="mopt active" onclick="setVidModel(this,'veo-3.0-fast-generate-001')">Veo 3 Fast</button>
-          <button class="mopt" onclick="setVidModel(this,'google/veo-3.1-fast')">Veo 3.1 Fast</button>
-          <button class="mopt" onclick="setVidModel(this,'sora-2')">Sora 2</button>
-          <button class="mopt" onclick="setVidModel(this,'wan-ai/wan2.2-t2v-a14b')">Wan 2.2</button>
-        </div>
-        <div class="strow" style="margin-top:12px;">
-          <div><div class="stlb">Só modo teste (grátis)</div><div class="stsb">Vídeo amostra — não gasta créditos Puter</div></div>
-          <div class="toggle" id="tgl-vid-test" onclick="toggleVidTest(this)"><div class="tknob"></div></div>
-        </div>
-        <button onclick="openPuterBilling()" style="margin-top:10px;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;color:#fff;border:none;background:linear-gradient(135deg,#4ab0f5,#7c6ef8);cursor:pointer;width:100%;">💳 Adicionar créditos Puter</button>
-        <div id="vid-balance-hint" style="font-size:12px;color:var(--text3);margin-top:8px;line-height:1.5;">Vídeos reais exigem saldo na conta Puter. Sem créditos, a KAREN usa vídeo demonstração automaticamente.</div>
       </div>
 
       <div class="stsec">
@@ -635,13 +610,6 @@ const DB = {
   set reminders(v){ localStorage.setItem('k_reminders', JSON.stringify(v)); },
   get remoteAuto(){ return localStorage.getItem('k_remote_auto') !== '0'; },
   set remoteAuto(v){ localStorage.setItem('k_remote_auto', v ? '1' : '0'); },
-  get vidModel() {
-    const m = localStorage.getItem('k_vid_model') || 'veo-3.0-fast-generate-001';
-    return VID_MODELS[m] ? m : 'veo-3.0-fast-generate-001';
-  },
-  set vidModel(v) { localStorage.setItem('k_vid_model', v); },
-  get vidTestMode() { return localStorage.getItem('k_vid_test') === '1'; },
-  set vidTestMode(v) { localStorage.setItem('k_vid_test', v ? '1' : '0'); },
 };
 
 // ── State ──
@@ -673,14 +641,6 @@ const MODELS = {
   'gpt-4o-mini':  'GPT-4o mini',
 };
 
-const VID_MODELS = {
-  'veo-3.0-fast-generate-001': 'Veo 3 Fast',
-  'google/veo-3.1-fast':       'Veo 3.1 Fast',
-  'sora-2':                    'Sora 2',
-  'wan-ai/wan2.2-t2v-a14b':    'Wan 2.2',
-};
-const VID_MODELS_FALLBACK = ['veo-3.0-fast-generate-001', 'google/veo-3.1-fast', 'sora-2', 'wan-ai/wan2.2-t2v-a14b'];
-
 // ── Init ──
 function purgeConvoHistory() {
   localStorage.removeItem('k_convos');
@@ -700,13 +660,11 @@ document.addEventListener('DOMContentLoaded', () => {
   ensureCreatorMemory();
   initPuterToken();
   updateModelUI();
-  updateVidModelUI();
   renderMemPreview();
   renderMemPage();
   updateDashboard();
   initWaDefaults();
   loadWaConfig();
-  loadVidConfig();
   loadPuterToken();
   updatePuterStatus();
   updateRemoteBadge();
@@ -732,7 +690,7 @@ function setPage(p) {
   if (p === 'remote')    { renderRemoteList(); setTimeout(() => document.getElementById('remote-input')?.focus(), 80); }
   if (p === 'dashboard') updateDashboard();
   if (p === 'memory')    renderMemPage();
-  if (p === 'settings')  { loadWaConfig(); loadVidConfig(); loadPuterToken(); updatePuterStatus(); }
+  if (p === 'settings')  { loadWaConfig(); loadPuterToken(); updatePuterStatus(); }
 }
 function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
@@ -755,20 +713,6 @@ function setModel(btn, id) {
   btn.classList.add('active');
   DB.model = id;
   updateModelUI();
-}
-
-function setVidModel(btn, id) {
-  document.querySelectorAll('#vid-mopts .mopt').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  DB.vidModel = id;
-  updateVidModelUI();
-}
-
-function updateVidModelUI() {
-  document.querySelectorAll('#vid-mopts .mopt').forEach(b => {
-    const match = b.getAttribute('onclick')?.includes(`'${DB.vidModel}'`);
-    b.classList.toggle('active', !!match);
-  });
 }
 
 function updateModelUI() {
@@ -824,26 +768,6 @@ function hideSetupModal() {
 
 function openPuterDashboard() {
   window.open('https://puter.com/dashboard#account', '_blank', 'noopener');
-}
-
-function openPuterBilling() {
-  window.open('https://puter.com/dashboard', '_blank', 'noopener');
-}
-
-function toggleVidTest(el) {
-  el.classList.toggle('on');
-  DB.vidTestMode = el.classList.contains('on');
-}
-
-function loadVidConfig() {
-  const tgl = document.getElementById('tgl-vid-test');
-  if (tgl) tgl.classList.toggle('on', DB.vidTestMode);
-  updateVidModelUI();
-}
-
-function isPuterFundsError(err) {
-  const t = String(err?.message || err || '').toLowerCase();
-  return /insufficient|low balance|not enough|funding|sem cr[eé]dito|saldo|upgrade/i.test(t);
 }
 
 function loadPuterToken() {
@@ -1047,31 +971,18 @@ async function sendMsg(txt) {
     return;
   }
 
-  const vidReq = detectVideoRequest(msg);
-  const imgReq = vidReq ? null : detectImageRequest(msg);
-  const tid = addThinking(vidReq ? 'Gerando vídeo… (pode levar alguns minutos)' : imgReq ? 'Gerando imagem…' : 'Pensando...');
+  const imgReq = detectImageRequest(msg);
+  const tid = addThinking(imgReq ? 'Gerando imagem…' : 'Pensando...');
 
   try {
     let reply;
     const imgCountBefore = document.querySelectorAll('#msgs .mbody img').length;
-    const vidCountBefore = document.querySelectorAll('#msgs .mbody video').length;
-    if (vidReq) {
-      reply = await callVideoAI(tid, vidReq.prompt, vidReq);
-    } else if (imgReq) {
+    if (imgReq) {
       reply = await callImageAI(tid, imgReq.prompt, !!imgReq.edit);
     } else {
       const useStream = tools.has('stream') && document.getElementById('tgl-stream').classList.contains('on');
       reply = useStream ? await callAIStream(tid) : await callAI(tid);
       const imgCountAfter = document.querySelectorAll('#msgs .mbody img').length;
-      const vidCountAfter = document.querySelectorAll('#msgs .mbody video').length;
-      const needsVideo = detectVideoRequest(msg) || (hasRecentVideoContext() && isLikelyVideoTweak(msg));
-      if (needsVideo && vidCountAfter === vidCountBefore) {
-        try {
-          reply = await retryAsVideo(msg);
-        } catch (vidErr) {
-          appendMsg('assistant', '⚠️ Erro ao gerar vídeo: ' + fmtErr(vidErr));
-        }
-      } else {
       const needsImage = looksLikeRefusal(reply)
         || detectImageModification(msg)
         || (replyClaimsImageWithoutResult(reply) && hasRecentImageContext())
@@ -1094,17 +1005,10 @@ async function sendMsg(txt) {
           }
         }
       }
-      }
     }
 
     if (!reply?.trim()) {
-      if (detectVideoRequest(msg) || isLikelyVideoCreation(msg)) {
-        try {
-          reply = await retryAsVideo(msg);
-        } catch (vidErr) {
-          throw new Error('Falha ao gerar vídeo: ' + fmtErr(vidErr));
-        }
-      } else if (isLikelyVisualCreation(msg)) {
+      if (isLikelyVisualCreation(msg)) {
         try {
           reply = await retryAsImage(msg);
         } catch (imgErr) {
@@ -1321,7 +1225,7 @@ function looksLikeRefusal(text) {
 function removeLastAssistantBubble(containerId = 'msgs') {
   const wraps = document.querySelectorAll(`#${containerId} .mwrap.assistant`);
   const last = wraps[wraps.length - 1];
-  if (last && !last.querySelector('img') && !last.querySelector('video') && !last.id?.startsWith('t') && !last.id?.startsWith('rt')) {
+  if (last && !last.querySelector('img') && !last.id?.startsWith('t') && !last.id?.startsWith('rt')) {
     last.remove();
   }
 }
@@ -1387,225 +1291,6 @@ async function callImageAI(tid, prompt, isEdit = false) {
     throw new Error('A imagem não foi gerada. Tente novamente.');
   }
   return '🎨 Imagem gerada: ' + prompt;
-}
-
-// ── Vídeo — Puter txt2vid ──
-const VIDEO_TRIGGERS = [
-  /^(?:gera|gere|cria|crie|faça|faz|monta|monte|produza|produz)\s+(?:me\s+)?(?:(?:um|uma|a|o)\s+)?(?:v[ií]deo|video|clip(?:e)?|filme|animação|animacao)\s*(?:de|do|da|com|mostrando|:|—|-)?\s*(.+)$/i,
-  /^(?:generate|create|make)\s+(?:me\s+)?(?:an?\s+)?(?:video|clip|movie|animation)\s*(?:of|showing|with|:|—|-)?\s*(.+)$/i,
-  /^(?:v[ií]deo|video|\/v[ií]deo|\/video)\s*[:]\s*(.+)$/i,
-  /^\/(?:v[ií]deo|video|vid)\s+(.+)$/i,
-];
-const VIDEO_VISUAL = [
-  /^(?:gera|gere|faça|faz|crie|cria|monte|monta|produza|produz|anime|animar)\s+(?:me\s+)?(?:(?:um|uma|a|o)\s+)?(?:v[ií]deo|video|clip(?:e)?)\s*(?:de\s+)?(.+)/i,
-];
-const VIDEO_EDIT = [
-  /^(?:coloque|coloca|adicione|mude|altere|tire|retire|refaz|refaça|atualize|prolongue|estenda)\b/i,
-  /\b(?:no v[ií]deo|no clip|na cena|no filme|mais lento|mais r[aá]pido|com som|sem som)\b/i,
-];
-const VIDEO_FROM_IMAGE = /(?:v[ií]deo|video|clip|anime|animar|animacao|animação).*(?:imagem|foto|arte)|(?:transforme|converta).*(?:imagem|foto).*(?:v[ií]deo|video)/i;
-
-function getLastVideoPrompt() {
-  const caps = document.querySelectorAll('#msgs .vid-cap');
-  if (!caps.length) return null;
-  return caps[caps.length - 1].textContent.replace(/^🎬\s*/, '').trim() || null;
-}
-
-function getLastVideoSrc() {
-  const vids = document.querySelectorAll('#msgs .mbody video');
-  if (!vids.length) return null;
-  const src = vids[vids.length - 1].src || vids[vids.length - 1].querySelector('source')?.src;
-  return src && src.length > 10 ? src : null;
-}
-
-function hasRecentVideoContext() {
-  return !!(getLastVideoPrompt() || getLastVideoSrc());
-}
-
-function getLastVideoContext() {
-  const dom = getLastVideoPrompt();
-  if (dom) return dom;
-  for (let i = history.length - 1; i >= 0; i--) {
-    const h = history[i];
-    if (h.role === 'assistant' && /^🎬 V[ií]deo gerado:/i.test(h.content)) {
-      return h.content.replace(/^🎬 V[ií]deo gerado:\s*/i, '').trim();
-    }
-    if (h.role === 'user') {
-      const direct = matchDirectVideoRequest(h.content);
-      if (direct) return direct;
-    }
-  }
-  return null;
-}
-
-function matchDirectVideoRequest(msg) {
-  const t = msg.trim();
-  for (const re of VIDEO_TRIGGERS) {
-    const m = t.match(re);
-    if (m?.[1] && cleanImagePrompt(m[1]).length > 2) return cleanImagePrompt(m[1]);
-  }
-  const loose = t.match(/(?:gera|gere|cria|crie|faça|faz|monta|monte)\s+(?:me\s+)?(?:(?:um|uma|a|o)\s+)?(?:v[ií]deo|video|clip(?:e)?)\s*(?:de\s+)?(.+)/i);
-  if (loose?.[1] && cleanImagePrompt(loose[1]).length > 2) return cleanImagePrompt(loose[1]);
-  return null;
-}
-
-function buildVideoEditPrompt(base, editMsg) {
-  return base + '. Modificação no vídeo: ' + editMsg.trim().replace(/[.!?]+$/, '');
-}
-
-function isLikelyVideoTweak(msg) {
-  if (!hasRecentVideoContext()) return false;
-  const t = msg.trim().toLowerCase();
-  if (t.length > 220) return false;
-  return VIDEO_EDIT.some(re => re.test(t)) || isLikelyImageTweak(msg);
-}
-
-function detectImageToVideo(msg) {
-  if (!VIDEO_FROM_IMAGE.test(msg)) return null;
-  const ref = getLastImageSrc();
-  const base = getLastImageContext() || getLastVideoContext();
-  if (!ref && !base) return null;
-  const prompt = base ? buildVideoEditPrompt(base, msg) : msg.trim();
-  return { prompt, fromImage: true, refImage: ref };
-}
-
-function detectVideoModification(msg) {
-  const t = msg.trim();
-  const base = getLastVideoContext();
-  if (!base) return null;
-  if (VIDEO_EDIT.some(re => re.test(t)) || isLikelyVideoTweak(t)) {
-    return { prompt: buildVideoEditPrompt(base, t), edit: true };
-  }
-  return null;
-}
-
-function detectVideoRequest(msg) {
-  const t = msg.trim();
-  const fromImg = detectImageToVideo(t);
-  if (fromImg) return fromImg;
-  const mod = detectVideoModification(t);
-  if (mod) return mod;
-  for (const re of VIDEO_VISUAL) {
-    const m = t.match(re);
-    if (m?.[1] && cleanImagePrompt(m[1]).length > 3) {
-      return { prompt: cleanImagePrompt(m[1]) };
-    }
-  }
-  const direct = matchDirectVideoRequest(t);
-  if (direct) return { prompt: direct };
-  return null;
-}
-
-function extractVideoPrompt(msg) {
-  const req = detectVideoRequest(msg);
-  return req?.prompt || null;
-}
-
-function isLikelyVideoCreation(msg) {
-  return !!extractVideoPrompt(msg);
-}
-
-function videoRefOpts(refImage) {
-  if (!refImage) return {};
-  if (refImage.startsWith('data:')) {
-    const b64 = refImage.split(',')[1];
-    if (b64) return { input_reference: b64 };
-  }
-  return {};
-}
-
-async function puterTxt2VidTest(prompt) {
-  const attempts = [
-    () => puter.ai.txt2vid(prompt, { test_mode: true }),
-    () => puter.ai.txt2vid(prompt, true),
-    () => puter.ai.txt2vid({ prompt, test_mode: true }),
-  ];
-  for (const run of attempts) {
-    try {
-      return await withTimeout(run(), 180000, 'timeout demo');
-    } catch {}
-  }
-  throw new Error('Modo teste indisponível');
-}
-
-async function puterTxt2Vid(prompt, opts = {}) {
-  initPuterToken();
-  if (typeof puter.ai.txt2vid !== 'function') {
-    throw new Error('txt2vid não disponível — atualize a página ou o Puter.js');
-  }
-
-  if (DB.vidTestMode) {
-    const video = await puterTxt2VidTest(prompt);
-    return { video, demo: true };
-  }
-
-  const errors = [];
-  let fundsError = false;
-  const models = [DB.vidModel, ...VID_MODELS_FALLBACK.filter(m => m !== DB.vidModel)];
-  const refOpts = videoRefOpts(opts.refImage);
-  for (const model of models) {
-    try {
-      const video = await withTimeout(
-        puter.ai.txt2vid(prompt, {
-          model,
-          seconds: 4,
-          disable_safety_checker: true,
-          ...refOpts,
-        }),
-        360000,
-        'timeout'
-      );
-      return { video, demo: false };
-    } catch (err) {
-      const msg = fmtErr(err);
-      errors.push(model + ': ' + msg);
-      if (isPuterFundsError(msg)) fundsError = true;
-    }
-  }
-
-  if (fundsError || errors.length) {
-    try {
-      const video = await puterTxt2VidTest(prompt);
-      return { video, demo: true, fundsError: true };
-    } catch (demoErr) {
-      if (fundsError) {
-        throw new Error('Sem créditos no Puter. Clique em "Adicionar créditos Puter" em Configurações ou ative "Só modo teste".');
-      }
-      throw new Error(errors[0] || fmtErr(demoErr));
-    }
-  }
-  throw new Error('Falha na geração de vídeo');
-}
-
-async function callVideoAI(tid, prompt, opts = {}) {
-  const refImg = opts.fromImage || opts.edit ? (opts.refImage || getLastImageSrc() || getLastVideoSrc()) : null;
-  const { video, demo, fundsError } = await puterTxt2Vid(prompt, { refImage: refImg });
-  removeThinking(tid);
-  const wrap = appendVideoMsg(prompt, video, demo, fundsError);
-  const vid = wrap?.querySelector('video');
-  const src = vid?.src || vid?.querySelector('source')?.src;
-  if (!src || src.length < 10) {
-    wrap?.remove();
-    throw new Error('O vídeo não foi gerado. Tente outro modelo em Configurações.');
-  }
-  if (demo) {
-    return '🎬 Vídeo demonstração (sem créditos Puter): ' + prompt;
-  }
-  return '🎬 Vídeo gerado: ' + prompt;
-}
-
-async function retryAsVideo(userMsg, containerId = 'msgs') {
-  removeLastAssistantBubble(containerId);
-  popLastAssistantHistory();
-  const tid = addThinking('Gerando vídeo… (pode levar alguns minutos)');
-  const mod = detectVideoModification(userMsg) || detectVideoRequest(userMsg);
-  const prompt = mod?.prompt || userMsg.trim();
-  try {
-    return await callVideoAI(tid, prompt, mod || {});
-  } catch (err) {
-    removeThinking(tid);
-    throw err;
-  }
 }
 
 // ── Puter — sem streaming ──
@@ -1687,9 +1372,8 @@ Comportamento:
 - Mantenha coerência com o contexto — não contradiga o que você ou o usuário disseram antes.
 - Não invente emoções ou problemas do usuário (confusão, tristeza, etc.) a menos que ele mencione.
 - Não critique como o usuário escreveu ou perguntou.
-- Se perguntarem o que você sabe fazer, liste suas capacidades: conversar, planejar, escrever textos, ajudar com código, gerar imagens (diga: "gere uma imagem de..."), gerar vídeos (diga: "gere um vídeo de..."), lembrar informações, criar lembretes (diga: "me lembre de..."), Assistente Remoto via WhatsApp.
+- Se perguntarem o que você sabe fazer, liste suas capacidades: conversar, planejar, escrever textos, ajudar com código, gerar imagens (diga: "gere uma imagem de..."), lembrar informações, criar lembretes (diga: "me lembre de..."), Assistente Remoto via WhatsApp.
 - Imagens: o SISTEMA gera automaticamente ao pedir criar ou alterar (ex: "retire a logo", "coloque um cachorro do lado"). Nunca diga "imagem gerada" em texto — o sistema exibe a imagem visualmente.
-- Vídeos: o SISTEMA gera via txt2vid ao pedir "gere um vídeo de...", "anime essa imagem", ou alterações no último vídeo. Pode levar minutos — nunca diga "vídeo gerado" sem o player aparecer.
 - WhatsApp: quando o usuário pedir envio no WhatsApp, confirme a mensagem entre aspas ou após ">". O SISTEMA envia automaticamente — você não envia manualmente, mas pode dizer "vou enviar agora no WhatsApp" pois o sistema executa em seguida.
 - Seja útil, direta e amigável.
 - Você aprende continuamente pelas memórias. Conversas antigas NÃO ficam salvas — só o que foi ensinado nas memórias permanece. Use sempre as memórias como sua base de conhecimento.
@@ -1875,88 +1559,6 @@ function downloadImg(btn) {
 function copyImgPrompt(btn) {
   const cap = btn.closest('.mbody').querySelector('.img-cap');
   const t = cap?.textContent?.replace(/^🎨\s*/, '') || '';
-  navigator.clipboard.writeText(t).then(() => {
-    btn.textContent = '✅ Copiado';
-    setTimeout(() => { btn.textContent = '📋 Copiar prompt'; }, 2000);
-  });
-}
-
-function appendVideoMsg(prompt, videoResult, isDemo, fundsError) {
-  const wrap = document.createElement('div');
-  wrap.className = 'mwrap assistant';
-  const av = karenAv('mav k');
-  const body = document.createElement('div');
-  body.className = 'mbody';
-  const name = document.createElement('div');
-  name.className = 'mname';
-  name.textContent = 'KAREN';
-  const bub = document.createElement('div');
-  bub.className = 'bubble';
-  const cap = document.createElement('div');
-  cap.className = 'vid-cap';
-  cap.textContent = (isDemo ? '🎬 [DEMO] ' : '🎬 ') + prompt;
-
-  let vid;
-  if (videoResult instanceof HTMLVideoElement) {
-    vid = videoResult.cloneNode(true);
-    vid.controls = true;
-    vid.playsInline = true;
-    vid.style.maxWidth = '100%';
-  } else if (typeof videoResult === 'string') {
-    vid = document.createElement('video');
-    vid.src = videoResult;
-    vid.controls = true;
-    vid.playsInline = true;
-    vid.preload = 'metadata';
-  } else if (videoResult?.src) {
-    vid = document.createElement('video');
-    vid.src = videoResult.src;
-    vid.controls = true;
-    vid.playsInline = true;
-  } else {
-    cap.textContent = '⚠️ Não foi possível exibir o vídeo.';
-    bub.appendChild(cap);
-    body.append(name, bub);
-    wrap.append(av, body);
-    document.getElementById('msgs').appendChild(wrap);
-    scroll();
-    return wrap;
-  }
-
-  vid.style.maxWidth = '100%';
-  bub.append(cap, vid);
-  if (isDemo) {
-    const demo = document.createElement('div');
-    demo.className = 'vid-demo';
-    demo.innerHTML = fundsError
-      ? '⚠️ Sem créditos Puter — vídeo amostra. <a href="#" onclick="openPuterBilling();return false;">Adicionar saldo</a> para gerar o seu prompt.'
-      : 'ℹ️ Modo teste ativo — vídeo amostra (grátis).';
-    bub.appendChild(demo);
-  }
-
-  const acts = document.createElement('div');
-  acts.className = 'macts';
-  acts.innerHTML = `<button class="mact" onclick="downloadVideo(this)">⬇️ Baixar</button><button class="mact" onclick="copyVidPrompt(this)">📋 Copiar prompt</button>`;
-  body.append(name, bub, acts);
-  wrap.append(av, body);
-  document.getElementById('msgs').appendChild(wrap);
-  scroll();
-  return wrap;
-}
-
-function downloadVideo(btn) {
-  const vid = btn.closest('.mbody').querySelector('video');
-  const src = vid?.src || vid?.querySelector('source')?.src;
-  if (!src) return;
-  const a = document.createElement('a');
-  a.href = src;
-  a.download = 'karen-video.mp4';
-  a.click();
-}
-
-function copyVidPrompt(btn) {
-  const cap = btn.closest('.mbody').querySelector('.vid-cap');
-  const t = cap?.textContent?.replace(/^🎬\s*/, '') || '';
   navigator.clipboard.writeText(t).then(() => {
     btn.textContent = '✅ Copiado';
     setTimeout(() => { btn.textContent = '📋 Copiar prompt'; }, 2000);
