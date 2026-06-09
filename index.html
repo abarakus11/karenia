@@ -1006,7 +1006,17 @@ async function sendMsg(txt) {
       }
     }
 
-    if (!reply?.trim()) throw new Error('Resposta vazia. Tente outro modelo em Configurações.');
+    if (!reply?.trim()) {
+      if (isLikelyVisualCreation(msg)) {
+        try {
+          reply = await retryAsImage(msg);
+        } catch (imgErr) {
+          throw new Error('Falha ao gerar imagem: ' + fmtErr(imgErr));
+        }
+      } else {
+        throw new Error('Resposta vazia. Tente outro modelo em Configurações.');
+      }
+    }
 
     history.push({ role: 'assistant', content: reply });
     trimHistory();
@@ -1042,8 +1052,8 @@ function chatOpts(extra = {}) {
 const IMG_MODEL = 'gpt-image-2';
 const IMG_MODELS = ['gpt-image-2', 'flux-schnell', 'flux-2-dev'];
 const IMAGE_VISUAL = [
-  /^(?:faça|faz|faça-me|faz-me|crie|cria|desenhe|desenha|monte|monta|produza|produz|pinte|pinta)\s+(?:me\s+)?(?:(?:um|uma|o|a)\s+)?(.+)/i,
-  /^(?:make|create|draw|paint)\s+(?:me\s+)?(?:an?\s+)?(.+)/i,
+  /^(?:gera|gere|faça|faz|faça-me|faz-me|crie|cria|desenhe|desenha|monte|monta|produza|produz|pinte|pinta)\s+(?:me\s+)?(?:(?:um|uma|a|o)\s+)?(.+)/i,
+  /^(?:make|create|draw|paint|generate)\s+(?:me\s+)?(?:an?\s+)?(.+)/i,
 ];
 const REFUSAL_PATTERNS = [
   /não vou ajudar/i, /não posso/i, /nao posso/i, /não é apropriado/i, /conteúdo de ódio/i,
@@ -1128,7 +1138,19 @@ function matchDirectImageRequest(msg) {
   }
   const loose = t.match(/(?:gera|gere|cria|crie|desenha|desenhe|faça|faz|monta|monte)\s+(?:me\s+)?(?:(?:um|uma|a|o)\s+)?(?:imagem|figura|ilustração|ilustracao|arte|foto|desenho)\s*(?:de\s+)?(.+)/i);
   if (loose?.[1] && cleanImagePrompt(loose[1]).length > 2) return cleanImagePrompt(loose[1]);
+  const visual = t.match(/^(?:gera|gere|cria|crie|desenha|desenhe|faça|faz|monta|monte)\s+(?:me\s+)?(?:(?:um|uma|a|o)\s+)?(.+)/i);
+  if (visual?.[1] && cleanImagePrompt(visual[1]).length > 3) return cleanImagePrompt(visual[1]);
   return null;
+}
+
+function extractVisualPrompt(msg) {
+  const req = detectImageRequest(msg);
+  if (req?.prompt) return req.prompt;
+  return null;
+}
+
+function isLikelyVisualCreation(msg) {
+  return !!extractVisualPrompt(msg);
 }
 
 function detectImageEdit(msg) {
@@ -1175,14 +1197,14 @@ function detectImageRequest(msg) {
   const t = msg.trim();
   const mod = detectImageModification(t);
   if (mod) return mod;
-  const direct = matchDirectImageRequest(t);
-  if (direct) return { prompt: direct };
   for (const re of IMAGE_VISUAL) {
     const m = t.match(re);
     if (m?.[1] && cleanImagePrompt(m[1]).length > 3) {
       return { prompt: cleanImagePrompt(m[1]) };
     }
   }
+  const direct = matchDirectImageRequest(t);
+  if (direct) return { prompt: direct };
   return null;
 }
 
