@@ -1,0 +1,18 @@
+{
+  "name": "KAREN AI",
+  "short_name": "KAREN",
+  "description": "Assistente de IA pessoal com memória permanente",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "assets/karen-avatar.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
