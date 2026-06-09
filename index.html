@@ -79,6 +79,8 @@ input,textarea{font-family:inherit;color:inherit;background:none;border:none;out
 /* Pages */
 .page{flex:1;overflow:hidden;display:none;flex-direction:column;}
 .page.active{display:flex;}
+#remote-msgs{flex:1;overflow-y:auto;padding:20px 0 8px;scroll-behavior:smooth;}
+#remote-iarea{border-top:1px solid var(--border);padding:12px 16px 16px;flex-shrink:0;background:var(--bg);}
 
 /* Chat */
 #msgs{flex:1;overflow-y:auto;padding:20px 0 8px;scroll-behavior:smooth;}
@@ -273,7 +275,7 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
   <div class="nitem"        id="nav-memory"     onclick="setPage('memory')">    <span class="nico">🧠</span> Memórias</div>
   <div class="nitem"        id="nav-settings"   onclick="setPage('settings')">  <span class="nico">⚙️</span> Configurações</div>
   <button class="wa-side" id="wa-side" onclick="sendLastToWhatsApp()" title="Enviar última resposta da KAREN">📱 Enviar no WhatsApp</button>
-  <button class="remote-side" id="remote-btn" onclick="sendRemoteAssistant()" title="Enviar lembretes e tarefas no seu WhatsApp">
+  <button class="remote-side" id="remote-btn" onclick="openRemoteChat()" title="Criar lembretes — WhatsApp 1 dia antes">
     <span id="remote-label">📲 Assistente Remoto</span><span class="remote-badge" id="remote-badge">0</span>
   </button>
   <div class="ssec" style="margin-top:10px">Aprendizado</div>
@@ -346,8 +348,8 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
           <button class="scard" onclick="suggest('Escreva um e-mail profissional apresentando meu projeto de IA para potenciais investidores.')">
             <div class="sico">✍️</div><div class="stit">Criar conteúdo</div><div class="sdesc">Textos, relatórios, docs</div>
           </button>
-          <button class="scard" onclick="suggest('Me lembre da reunião amanhã às 15h')">
-            <div class="sico">📲</div><div class="stit">Assistente Remoto</div><div class="sdesc">Lembrete no WhatsApp</div>
+          <button class="scard" onclick="openRemoteChat()">
+            <div class="sico">📲</div><div class="stit">Assistente Remoto</div><div class="sdesc">Lembretes no WhatsApp</div>
           </button>
           <button class="scard" onclick="suggest('Gere uma imagem de um robô assistente feminino com visual futurista roxo')">
             <div class="sico">🎨</div><div class="stit">Gerar imagem</div><div class="sdesc">IA cria a arte pra você</div>
@@ -381,6 +383,50 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
         <div class="ibot">
           <span class="iinfo">Puter.js · resposta em segundos</span>
           <button class="sbtn" id="sbtn" onclick="sendMsg()" aria-label="Enviar">➤</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSISTENTE REMOTO -->
+  <div class="page" id="page-remote">
+    <div id="remote-msgs">
+      <div class="welcome" id="remote-welcome">
+        <div class="wlogo"><img src="assets/karen-avatar.png" alt="KAREN"></div>
+        <div>
+          <h2 class="wtit">📲 Assistente Remoto</h2>
+          <p class="wsub">Crie lembretes de reuniões e tarefas. A KAREN envia no seu WhatsApp <strong>1 dia antes</strong> de cada compromisso.</p>
+        </div>
+        <div class="sgrid" style="max-width:520px">
+          <button class="scard" onclick="remoteSuggest('Reunião com cliente sexta às 14h')">
+            <div class="sico">📅</div><div class="stit">Reunião</div><div class="sdesc">Agendar compromisso</div>
+          </button>
+          <button class="scard" onclick="remoteSuggest('Tarefa: enviar relatório até segunda 10h')">
+            <div class="sico">✅</div><div class="stit">Tarefa</div><div class="sdesc">Prazo com lembrete</div>
+          </button>
+          <button class="scard" onclick="remoteSuggest('Quais lembretes tenho agendados?')">
+            <div class="sico">📋</div><div class="stit">Meus lembretes</div><div class="sdesc">Ver o que está salvo</div>
+          </button>
+          <button class="scard" onclick="remoteSuggest('Consulta médica dia 15 às 9h')">
+            <div class="sico">🔔</div><div class="stit">Compromisso</div><div class="sdesc">Qualquer evento</div>
+          </button>
+        </div>
+        <div id="remote-list" style="margin-top:8px;font-size:12px;color:var(--text3);max-width:400px"></div>
+      </div>
+    </div>
+    <div id="remote-iarea">
+      <div class="iwrap">
+        <div class="itools">
+          <button class="itool on" style="opacity:.85;cursor:default;color:var(--amber)">📲 Modo lembretes</button>
+        </div>
+        <textarea class="ifield" id="remote-input"
+          placeholder="Ex: Reunião com equipe quinta às 10h — me lembre 1 dia antes no WhatsApp"
+          rows="1"
+          onkeydown="handleRemoteKey(event)"
+          oninput="autoResize(this)"></textarea>
+        <div class="ibot">
+          <span class="iinfo">WhatsApp automático · 1 dia de antecedência</span>
+          <button class="sbtn" id="remote-sbtn" onclick="sendRemoteMsg()" aria-label="Enviar" style="background:linear-gradient(135deg,#d4a017,#f0b942)">➤</button>
         </div>
       </div>
     </div>
@@ -488,7 +534,7 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
           <div class="toggle" id="tgl-wa" onclick="toggleWaAuto(this)"><div class="tknob"></div></div>
         </div>
         <div class="strow">
-          <div><div class="stlb">Assistente Remoto automático</div><div class="stsb">Envia lembretes no WhatsApp quando chegar o horário</div></div>
+          <div><div class="stlb">Assistente Remoto automático</div><div class="stsb">Envia no WhatsApp 1 dia antes de cada compromisso</div></div>
           <div class="toggle on" id="tgl-remote" onclick="toggleRemoteAuto(this)"><div class="tknob"></div></div>
         </div>
       </div>
@@ -563,7 +609,8 @@ const DB = {
 };
 
 // ── State ──
-let history = [];   // [{role, content}] — contexto curto da sessão atual
+let history = [];        // contexto curto do chat principal
+let remoteHistory = [];  // contexto do Assistente Remoto
 let busy    = false;
 let voiceRec = null;
 let curCat  = '';
@@ -627,10 +674,15 @@ function setPage(p) {
   document.querySelectorAll('.nitem').forEach(el => el.classList.remove('active'));
   document.getElementById('page-' + p).classList.add('active');
   document.getElementById('nav-' + p)?.classList.add('active');
-  const titles = { chat:'Chat', dashboard:'Dashboard', memory:'Base de Conhecimento', settings:'Configurações' };
+  const titles = { chat:'Chat', remote:'Assistente Remoto', dashboard:'Dashboard', memory:'Base de Conhecimento', settings:'Configurações' };
   document.getElementById('htit').textContent = titles[p] || p;
+  const iarea = document.getElementById('iarea');
+  const remoteIarea = document.getElementById('remote-iarea');
+  if (iarea) iarea.style.display = p === 'chat' ? '' : 'none';
+  if (remoteIarea) remoteIarea.style.display = p === 'remote' ? '' : 'none';
   closeSidebar();
-  if (p === 'chat')      setTimeout(() => document.getElementById('minput').focus(), 80);
+  if (p === 'chat')      setTimeout(() => document.getElementById('minput')?.focus(), 80);
+  if (p === 'remote')    { renderRemoteList(); setTimeout(() => document.getElementById('remote-input')?.focus(), 80); }
   if (p === 'dashboard') updateDashboard();
   if (p === 'memory')    renderMemPage();
   if (p === 'settings')  { loadWaConfig(); loadPuterToken(); updatePuterStatus(); }
@@ -935,10 +987,6 @@ async function sendMsg(txt) {
     }
 
     extractMemories(msg, reply);
-
-    if (detectReminderRequest(msg)) {
-      saveReminderFromMessage(msg).catch(() => {});
-    }
 
     if (DB.waAuto) {
       sendWhatsApp('🤖 *KAREN*\n\n' + reply.slice(0, 1400)).catch(() => {});
@@ -1269,7 +1317,7 @@ function copyImgPrompt(btn) {
   });
 }
 
-function appendMsg(role, content) {
+function appendMsg(role, content, containerId = 'msgs') {
   const wrap = document.createElement('div'); wrap.className = 'mwrap ' + role;
   const av   = role === 'user'
     ? (() => { const d = document.createElement('div'); d.className = 'mav u'; d.textContent = 'U'; return d; })()
@@ -1283,8 +1331,8 @@ function appendMsg(role, content) {
   }
   body.append(name, bub, acts);
   wrap.append(av, body);
-  document.getElementById('msgs').appendChild(wrap);
-  scroll();
+  document.getElementById(containerId).appendChild(wrap);
+  scroll(containerId);
   return wrap;
 }
 
@@ -1317,7 +1365,10 @@ function addThinking(label = 'Pensando...') {
   return id;
 }
 function removeThinking(id) { const el = document.getElementById(id); if (el) el.remove(); }
-function scroll() { const m = document.getElementById('msgs'); m.scrollTop = m.scrollHeight; }
+function scroll(containerId = 'msgs') {
+  const m = document.getElementById(containerId);
+  if (m) m.scrollTop = m.scrollHeight;
+}
 
 // ── Formatação markdown simples ──
 function fmt(text) {
@@ -1462,19 +1513,12 @@ async function testWhatsApp() {
   }
 }
 
-// ── Assistente Remoto — lembretes via WhatsApp ──
-const REMINDER_PATTERNS = [
-  /me\s+lembr/i, /lembrete/i, /n[aã]o\s+esquec/i, /me\s+avise/i,
-  /agendar/i, /lembrar\s+(?:de|da|do)/i, /preciso\s+(?:lembrar|fazer)/i,
-  /me\s+manda\s+(?:um\s+)?lembrete/i, /anot[ae]\s+(?:pra|para)\s+(?:me\s+)?lembrar/i,
-];
-
-function detectReminderRequest(msg) {
-  return REMINDER_PATTERNS.some(re => re.test(msg));
-}
+// ── Assistente Remoto — chat dedicado + WhatsApp 1 dia antes ──
+const ADVANCE_MS = 24 * 60 * 60 * 1000;
 
 function getActiveReminders() {
-  return DB.reminders.filter(r => !r.done);
+  const now = new Date();
+  return DB.reminders.filter(r => !r.done && (!r.dueAt || new Date(r.dueAt) >= now));
 }
 
 function updateRemoteBadge() {
@@ -1486,131 +1530,247 @@ function updateRemoteBadge() {
 }
 
 function fmtReminderWhen(iso) {
-  if (!iso) return 'quando solicitado';
+  if (!iso) return 'sem data definida';
   try {
     const d = new Date(iso);
-    if (isNaN(d)) return 'sem horário';
-    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  } catch { return 'sem horário'; }
+    if (isNaN(d)) return 'sem data';
+    return d.toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch { return 'sem data'; }
+}
+
+function calcNotifyAt(dueAt) {
+  if (!dueAt) return null;
+  const due = new Date(dueAt);
+  if (isNaN(due)) return null;
+  return new Date(due.getTime() - ADVANCE_MS).toISOString();
 }
 
 function addReminder({ text, dueAt, type }) {
+  const notifyAt = calcNotifyAt(dueAt);
   const list = DB.reminders;
   list.push({
-    id: 'rem_' + Date.now(),
+    id: 'rem_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
     text: text.slice(0, 300),
     dueAt: dueAt || null,
+    notifyAt,
     type: type || 'geral',
     done: false,
+    advanceSent: false,
     createdAt: new Date().toISOString(),
   });
   DB.reminders = list.slice(-50);
   updateRemoteBadge();
 }
 
-async function saveReminderFromMessage(userMsg) {
+function renderRemoteList() {
+  const el = document.getElementById('remote-list');
+  if (!el) return;
+  const active = getActiveReminders();
+  if (!active.length) {
+    el.innerHTML = 'Nenhum lembrete agendado ainda.';
+    return;
+  }
+  el.innerHTML = '<strong style="color:var(--amber)">Agendados:</strong><br>' +
+    active.slice(0, 6).map(r => {
+      const wa = r.notifyAt ? `WhatsApp em ${fmtReminderWhen(r.notifyAt)}` : 'sem aviso automático';
+      return `• ${esc(r.text.slice(0, 60))} — ${fmtReminderWhen(r.dueAt)}<br><span style="font-size:11px">${wa}</span>`;
+    }).join('<br><br>');
+}
+
+function openRemoteChat() {
+  setPage('remote');
+  renderRemoteList();
+}
+
+function handleRemoteKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendRemoteMsg(); }
+}
+
+function remoteSuggest(t) {
+  document.getElementById('remote-input').value = t;
+  sendRemoteMsg(t);
+}
+
+function buildRemoteSystem() {
+  const active = getActiveReminders();
+  let sys = `Você é KAREN no modo Assistente Remoto.
+
+Função:
+- Ajudar o usuário a criar e gerenciar lembretes de reuniões, tarefas e compromissos.
+- Cada lembrete salvo será enviado automaticamente no WhatsApp do usuário com 1 DIA DE ANTECEDÊNCIA.
+- Confirme sempre: o quê, data/hora do compromisso, e que o aviso no WhatsApp será 1 dia antes.
+- Se faltar data ou hora, pergunte antes de confirmar.
+- Se perguntarem "quais lembretes tenho", liste os agendados abaixo.
+- Responda em português do Brasil, de forma clara e objetiva.`;
+
+  if (active.length) {
+    sys += '\n\nLembretes já agendados:\n';
+    sys += active.map((r, i) =>
+      `${i + 1}. [${r.type}] ${r.text} — compromisso: ${fmtReminderWhen(r.dueAt)} — WhatsApp: ${r.notifyAt ? fmtReminderWhen(r.notifyAt) : 'sem data'}`
+    ).join('\n');
+  }
+  return sys;
+}
+
+function buildRemoteMessages() {
+  return [{ role: 'system', content: buildRemoteSystem() }, ...remoteHistory.slice(-10)];
+}
+
+function addRemoteThinking(label = 'Organizando lembrete…') {
+  const id = 'rt' + Date.now();
+  const wrap = document.createElement('div');
+  wrap.className = 'mwrap assistant';
+  wrap.id = id;
+  wrap.innerHTML = `<div class="mav k"><img src="${KAREN_AVATAR}" alt="KAREN"></div><div class="mbody"><div class="mname">KAREN</div><div class="bubble" style="display:flex;align-items:center;gap:8px"><div class="tdots"><span></span><span></span><span></span></div><span style="font-size:13px;color:var(--text3)">${esc(label)}</span></div></div>`;
+  document.getElementById('remote-msgs').appendChild(wrap);
+  scroll('remote-msgs');
+  return id;
+}
+
+async function saveReminderFromRemote(userMsg, reply) {
+  const listQuery = /quais lembretes|meus lembretes|lista.*lembrete/i.test(userMsg);
+  if (listQuery) return;
+
   try {
     const res = await puterChatRequest(
-      [{ role: 'user', content: `Extraia o lembrete desta mensagem. Retorne SOMENTE JSON:
-{"text":"descrição clara do lembrete","dueAt":"ISO8601 com fuso local ou null","type":"reuniao|tarefa|geral"}
-Calcule dueAt se houver horário/data (ex: amanhã 15h, daqui 2 horas). Se não houver, null.
+      [{ role: 'user', content: `Analise se o usuário pediu para CRIAR um novo lembrete/compromisso.
+Retorne SOMENTE JSON:
+{"create":true|false,"text":"descrição","dueAt":"ISO8601 local do COMPROMISSO ou null","type":"reuniao|tarefa|geral"}
+create=false se for só pergunta, listagem ou conversa sem novo compromisso.
+dueAt = data/hora DO EVENTO (não do aviso). Calcule datas relativas (amanhã, sexta, dia 15).
 
-Mensagem: ${userMsg.slice(0, 400)}` }],
-      { model: 'gpt-4o-mini', max_tokens: 200, stream: false }
+Usuário: ${userMsg.slice(0, 400)}
+KAREN: ${reply.slice(0, 300)}` }],
+      { model: 'gpt-4o-mini', max_tokens: 220, stream: false }
     );
     const raw = (typeof res === 'string' ? res : extractPuterReply(res)).trim()
       .replace(/```json|```/g, '').trim();
     const data = JSON.parse(raw);
-    if (!data?.text?.trim()) return;
+    if (!data?.create || !data?.text?.trim()) return;
+
     addReminder({ text: data.text.trim(), dueAt: data.dueAt || null, type: data.type });
-    const lastBody = document.querySelector('#msgs .mwrap.assistant:last-child .mbody');
+    const lastBody = document.querySelector('#remote-msgs .mwrap.assistant:last-child .mbody');
     if (lastBody && !lastBody.querySelector('.remsaved')) {
       const badge = document.createElement('div');
       badge.className = 'memsaved remsaved';
-      badge.innerHTML = `🔔 Lembrete salvo — use <strong>Assistente Remoto</strong> ou aguarde o horário`;
+      const notify = data.dueAt ? fmtReminderWhen(calcNotifyAt(data.dueAt)) : 'quando houver data';
+      badge.innerHTML = `🔔 Salvo! WhatsApp em <strong>${notify}</strong> (1 dia antes)`;
       lastBody.appendChild(badge);
     }
-  } catch {
-    addReminder({ text: userMsg.slice(0, 200), dueAt: null, type: 'geral' });
+    renderRemoteList();
+  } catch { /* silencioso */ }
+}
+
+async function sendRemoteMsg(txt) {
+  const inp = document.getElementById('remote-input');
+  const msg = (txt || inp.value).trim();
+  if (!msg || busy) return;
+
+  busy = true;
+  document.getElementById('remote-sbtn').disabled = true;
+  inp.value = '';
+  inp.style.height = 'auto';
+  const ws = document.getElementById('remote-welcome');
+  if (ws) ws.remove();
+
+  appendMsg('user', msg, 'remote-msgs');
+  remoteHistory.push({ role: 'user', content: msg });
+  if (remoteHistory.length > 12) remoteHistory = remoteHistory.slice(-12);
+
+  try {
+    ensurePuterReady();
+  } catch (err) {
+    busy = false;
+    document.getElementById('remote-sbtn').disabled = false;
+    appendMsg('assistant', '⚠️ ' + fmtErr(err), 'remote-msgs');
+    return;
+  }
+
+  const tid = addRemoteThinking();
+  try {
+    const reply = (await withTimeout(
+      puterChatRequest(buildRemoteMessages(), { model: DB.model, max_tokens: 700, stream: false }),
+      90000,
+      'Tempo esgotado.'
+    )).trim();
+
+    removeThinking(tid);
+    if (!reply) throw new Error('Resposta vazia.');
+    appendMsg('assistant', reply, 'remote-msgs');
+    remoteHistory.push({ role: 'assistant', content: reply });
+    await saveReminderFromRemote(msg, reply);
+    updateRemoteBadge();
+  } catch (err) {
+    removeThinking(tid);
+    appendMsg('assistant', '⚠️ Erro: ' + fmtErr(err), 'remote-msgs');
+  } finally {
+    busy = false;
+    document.getElementById('remote-sbtn').disabled = false;
+    scroll('remote-msgs');
   }
 }
 
-function buildRemoteMessage(reminders) {
-  const reunioes = reminders.filter(r => r.type === 'reuniao');
-  const tarefas = reminders.filter(r => r.type === 'tarefa');
-  const outros = reminders.filter(r => r.type !== 'reuniao' && r.type !== 'tarefa');
-  let msg = '📲 *KAREN — Assistente Remoto*\n\nOlá! Seguem seus lembretes:\n';
+function getDueAdvanceReminders() {
+  const now = new Date();
+  return getActiveReminders().filter(r =>
+    r.notifyAt && new Date(r.notifyAt) <= now && !r.advanceSent && r.dueAt
+  );
+}
 
-  const section = (tit, items) => {
-    if (!items.length) return '';
-    return `\n*${tit}*\n` + items.map((r, i) =>
-      `${i + 1}. ${r.text}${r.dueAt ? ' — _' + fmtReminderWhen(r.dueAt) + '_' : ''}`
-    ).join('\n');
-  };
-
-  msg += section('📅 Reuniões', reunioes);
-  msg += section('✅ Tarefas', tarefas);
-  msg += section('🔔 Lembretes', outros);
-  msg += '\n\n_Enviado pela KAREN AI · Assistente Remoto_';
+function buildAdvanceMessage(reminders) {
+  let msg = '📲 *KAREN — Assistente Remoto*\n\n⏰ *Lembrete com 1 dia de antecedência:*\n\n';
+  msg += reminders.map((r, i) => {
+    const quando = fmtReminderWhen(r.dueAt);
+    return `${i + 1}. *${r.text}*\n   📅 Compromisso: ${quando}`;
+  }).join('\n\n');
+  msg += '\n\n_Não esqueça! Enviado pela KAREN AI_';
   return msg.slice(0, 1500);
 }
 
-async function sendRemoteAssistant(markAuto = false) {
-  const btn = document.getElementById('remote-btn');
+async function sendAdvanceReminders() {
   saveWaConfig();
-  const active = getActiveReminders();
-  if (!active.length) {
-    if (!markAuto) alert('Nenhum lembrete pendente.\n\nPeça à KAREN: "me lembre da reunião às 15h" ou "lembrete: comprar leite".');
-    return;
-  }
-  const label = document.getElementById('remote-label');
-  if (btn && !markAuto) { btn.disabled = true; if (label) label.textContent = '📲 Enviando...'; }
-  try {
-    const toSend = markAuto
-      ? active.filter(r => r.dueAt && new Date(r.dueAt) <= new Date())
-      : active;
-    if (!toSend.length) return;
+  if (!DB.waPhone || !DB.waKey) return;
+  const toSend = getDueAdvanceReminders();
+  if (!toSend.length) return;
 
-    await sendWhatsApp(buildRemoteMessage(toSend));
+  try {
+    await sendWhatsApp(buildAdvanceMessage(toSend));
     const list = DB.reminders;
-    const sentIds = new Set(toSend.map(r => r.id));
+    const ids = new Set(toSend.map(r => r.id));
     for (const r of list) {
-      if (sentIds.has(r.id)) {
+      if (ids.has(r.id)) {
+        r.advanceSent = true;
         r.notifiedAt = new Date().toISOString();
-        if (markAuto) r.done = true;
       }
     }
     DB.reminders = list;
     updateRemoteBadge();
+    renderRemoteList();
+  } catch { /* silencioso */ }
+}
 
-    if (btn && !markAuto) {
-      if (label) label.textContent = '✅ Enviado!';
-      setTimeout(() => { if (label) label.textContent = '📲 Assistente Remoto'; btn.disabled = false; }, 2500);
-    }
-    if (!markAuto) closeSidebar();
-  } catch (err) {
-    if (btn && !markAuto) { if (label) label.textContent = '📲 Assistente Remoto'; btn.disabled = false; }
-    if (!markAuto) {
-      appendMsg('assistant', '⚠️ Assistente Remoto: ' + fmtErr(err));
-      setPage('chat');
+function expirePastReminders() {
+  const now = new Date();
+  const list = DB.reminders;
+  let changed = false;
+  for (const r of list) {
+    if (!r.done && r.dueAt && new Date(r.dueAt) < now) {
+      r.done = true;
+      changed = true;
     }
   }
+  if (changed) { DB.reminders = list; updateRemoteBadge(); }
 }
 
 let reminderTimer = null;
 function startReminderWatcher() {
   if (reminderTimer) clearInterval(reminderTimer);
-  reminderTimer = setInterval(() => {
-    if (!DB.remoteAuto || !DB.waPhone || !DB.waKey) return;
-    const due = getActiveReminders().filter(r => r.dueAt && new Date(r.dueAt) <= new Date());
-    if (due.length) sendRemoteAssistant(true).catch(() => {});
-  }, 60000);
-  setTimeout(() => {
-    if (DB.remoteAuto && DB.waPhone && DB.waKey) {
-      const due = getActiveReminders().filter(r => r.dueAt && new Date(r.dueAt) <= new Date());
-      if (due.length) sendRemoteAssistant(true).catch(() => {});
-    }
-  }, 3000);
+  const tick = () => {
+    expirePastReminders();
+    if (DB.remoteAuto) sendAdvanceReminders().catch(() => {});
+  };
+  reminderTimer = setInterval(tick, 60000);
+  setTimeout(tick, 3000);
 }
 
 // ── Sugestões ──
