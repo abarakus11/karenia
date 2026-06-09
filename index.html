@@ -42,9 +42,12 @@ input,textarea{font-family:inherit;color:inherit;background:none;border:none;out
 .nitem:hover{background:var(--bg3);color:var(--text);}
 .nitem.active{background:var(--ag);color:var(--accent2);border-color:rgba(124,110,248,.18);}
 .nico{font-size:15px;width:18px;text-align:center;flex-shrink:0;}
-#sconv{flex:1;overflow-y:auto;padding-bottom:8px;}
+#sconv{flex:1;overflow-y:auto;padding:0 10px 8px;}
 #sconv::-webkit-scrollbar{width:3px;}
 #sconv::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
+.mem-preview .mpitem{padding:8px 10px;margin:2px 0;border-radius:8px;font-size:11px;color:var(--text3);line-height:1.45;border:1px solid transparent;}
+.mem-preview .mpitem:hover{background:var(--bg3);border-color:var(--border);}
+.mem-preview .mptag{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--accent2);margin-bottom:3px;}
 .citem{margin:1px 8px;padding:8px 12px;border-radius:8px;cursor:pointer;transition:all .15s;border:1px solid transparent;}
 .citem:hover{background:var(--bg3);}
 .citem.active{background:var(--bg3);border-color:var(--border);}
@@ -259,15 +262,15 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
     <div class="lmark"><img src="assets/karen-avatar.png" alt="KAREN"></div>
     <div><div class="ltxt">KAREN</div><div class="lsub">Personal AI</div></div>
   </div>
-  <button class="snew" onclick="newChat()">✦ Nova conversa</button>
+  <button class="snew" onclick="newChat()">🧹 Limpar tela</button>
   <div class="ssec">Menu</div>
   <div class="nitem active" id="nav-chat"       onclick="setPage('chat')">      <span class="nico">💬</span> Chat</div>
   <div class="nitem"        id="nav-dashboard"  onclick="setPage('dashboard')"> <span class="nico">⚡</span> Dashboard</div>
   <div class="nitem"        id="nav-memory"     onclick="setPage('memory')">    <span class="nico">🧠</span> Memórias</div>
   <div class="nitem"        id="nav-settings"   onclick="setPage('settings')">  <span class="nico">⚙️</span> Configurações</div>
   <button class="wa-side" id="wa-side" onclick="sendLastToWhatsApp()" title="Enviar última resposta da KAREN">📱 Enviar no WhatsApp</button>
-  <div class="ssec" style="margin-top:10px">Conversas</div>
-  <div id="sconv"></div>
+  <div class="ssec" style="margin-top:10px">Aprendizado</div>
+  <div id="sconv" class="mem-preview"></div>
   <div class="sbot">
     <div class="urow">
       <div class="uav"><img src="assets/karen-avatar.png" alt="KAREN"></div>
@@ -356,7 +359,7 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
     <div id="iarea">
       <div class="iwrap">
         <div class="itools">
-          <button class="itool on" id="t-mem"    onclick="toggleTool('mem')"   >🧠 Memória</button>
+          <button class="itool on" id="t-mem"    title="Memória sempre ativa" style="opacity:.85;cursor:default">🧠 Memória ativa</button>
           <button class="itool on" id="t-stream" onclick="toggleTool('stream')">⚡ Streaming</button>
           <button class="itool"    id="t-web"    onclick="toggleTool('web')"   >🔍 Web</button>
           <button class="itool"    id="t-voice"  onclick="toggleTool('voice')" >🔊 Voz</button>
@@ -381,7 +384,7 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
       <div class="sgr">
         <div class="sc"><div class="siv">💬</div><div class="svl" id="ds-msgs">0</div><div class="slb">Mensagens</div><div class="sch">nesta sessão</div></div>
         <div class="sc"><div class="siv">🧠</div><div class="svl" id="ds-mems">0</div><div class="slb">Memórias</div><div class="sch">armazenadas</div></div>
-        <div class="sc"><div class="siv">💬</div><div class="svl" id="ds-convs">0</div><div class="slb">Conversas</div><div class="sch">salvas</div></div>
+        <div class="sc"><div class="siv">📚</div><div class="svl" id="ds-learn">0</div><div class="slb">Aprendizado</div><div class="sch">memórias ativas</div></div>
         <div class="sc"><div class="siv">🤖</div><div class="svl" id="ds-mod" style="font-size:13px;margin-top:4px">GPT-4o</div><div class="slb">Modelo ativo</div><div class="sch">nuvem · instantâneo</div></div>
       </div>
       <div class="dg2">
@@ -395,8 +398,8 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
           <div class="agt"><div class="adot on"></div><div class="aname">WhatsApp</div><div class="astatus">CallMeBot API</div></div>
         </div>
         <div class="dc">
-          <div class="dct">🕐 Conversas recentes</div>
-          <div id="dash-convs"><div style="color:var(--text3);font-size:13px">Nenhuma ainda</div></div>
+          <div class="dct">🧠 Último aprendizado</div>
+          <div id="dash-learn"><div style="color:var(--text3);font-size:13px">Converse — cada troca ensina a KAREN</div></div>
         </div>
       </div>
       <div class="dc">
@@ -492,8 +495,8 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
         <div class="sttit">Comportamento</div>
         <div class="stdesc">Como a KAREN aprende e responde</div>
         <div class="strow">
-          <div><div class="stlb">Extração automática de memórias</div><div class="stsb">Salva informações importantes de cada troca</div></div>
-          <div class="toggle on" id="tgl-mem"    onclick="this.classList.toggle('on')"><div class="tknob"></div></div>
+          <div><div class="stlb">Aprendizado por memória</div><div class="stsb">Sempre ativo — cada troca ensina a KAREN (sem histórico de conversas)</div></div>
+          <div class="toggle on" id="tgl-mem" style="opacity:.6;pointer-events:none"><div class="tknob"></div></div>
         </div>
         <div class="strow">
           <div><div class="stlb">Streaming de respostas</div><div class="stsb">Exibe palavras conforme são geradas</div></div>
@@ -543,13 +546,12 @@ const DB = {
 };
 
 // ── State ──
-let history = [];   // [{role, content}] — conversa atual
-let convId  = null;
+let history = [];   // [{role, content}] — contexto curto da sessão atual
 let busy    = false;
 let voiceRec = null;
 let curCat  = '';
 let totalMsgs = 0;
-const tools = new Set(['mem','stream']);
+const tools = new Set(['stream']);
 
 const KAREN_AVATAR = 'assets/karen-avatar.png';
 
@@ -572,6 +574,10 @@ const MODELS = {
 };
 
 // ── Init ──
+function purgeConvoHistory() {
+  localStorage.removeItem('k_convos');
+}
+
 function ensureCreatorMemory() {
   const mems = DB.memories;
   const seed = 'Carlos Eber é o criador e pai da KAREN AI — a mente brilhante que a criou e está aprimorando continuamente.';
@@ -582,10 +588,11 @@ function ensureCreatorMemory() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  purgeConvoHistory();
   ensureCreatorMemory();
   initPuterToken();
   updateModelUI();
-  renderSidebarConvos();
+  renderMemPreview();
   renderMemPage();
   updateDashboard();
   loadWaConfig();
@@ -903,15 +910,12 @@ async function sendMsg(txt) {
 
     history.push({ role: 'assistant', content: reply });
     trimHistory();
-    saveConvo(msg, reply);
 
     if (document.getElementById('tgl-speak').classList.contains('on')) {
       speakWebAPI(reply.slice(0, 400));
     }
 
-    if (document.getElementById('tgl-mem').classList.contains('on')) {
-      extractMemories(msg, reply);
-    }
+    extractMemories(msg, reply);
 
     if (DB.waAuto) {
       sendWhatsApp('🤖 *KAREN*\n\n' + reply.slice(0, 1400)).catch(() => {});
@@ -927,7 +931,7 @@ async function sendMsg(txt) {
 }
 
 function trimHistory() {
-  if (history.length > 20) history = history.slice(-20);
+  if (history.length > 8) history = history.slice(-8);
 }
 
 function chatOpts(extra = {}) {
@@ -1054,36 +1058,38 @@ Comportamento:
 - Não invente emoções ou problemas do usuário (confusão, tristeza, etc.) a menos que ele mencione.
 - Não critique como o usuário escreveu ou perguntou.
 - Se perguntarem o que você sabe fazer, liste suas capacidades: conversar, planejar, escrever textos, ajudar com código, gerar imagens (diga: "gere uma imagem de..."), lembrar informações, enviar respostas por WhatsApp.
-- Seja útil, direta e amigável.`;
+- Seja útil, direta e amigável.
+- Você aprende continuamente pelas memórias. Conversas antigas NÃO ficam salvas — só o que foi ensinado nas memórias permanece. Use sempre as memórias como sua base de conhecimento.`;
   if (mems.length) {
-    const recent = mems.slice(-5);
-    sys += `\n\nInformações salvas sobre o usuário:\n`;
-    sys += recent.map(m => `- ${m.text.slice(0, 120)}`).join('\n');
+    const learned = mems.slice(-30);
+    sys += `\n\n═══ MEMÓRIAS / O QUE VOCÊ JÁ APRENDEU (use sempre) ═══\n`;
+    sys += learned.map(m => `- [${m.cat || 'geral'}] ${m.text.slice(0, 200)}`).join('\n');
   }
   return sys;
 }
 
 function buildUserContent(msg) {
-  if (!tools.has('mem')) return msg;
   const mems = DB.memories;
   if (!mems.length) return msg;
   const words = msg.toLowerCase().split(/\W+/).filter(w => w.length > 3);
   const relevant = mems.filter(m =>
     words.some(w => m.text.toLowerCase().includes(w))
-  ).slice(0, 3);
-  if (!relevant.length) return msg;
-  return msg + `\n\n[Memórias relevantes: ${relevant.map(m => m.text.slice(0, 100)).join(' | ')}]`;
+  ).slice(0, 5);
+  const recent = mems.slice(-3);
+  const pool = [...new Map([...relevant, ...recent].map(m => [m.id, m])).values()].slice(0, 6);
+  return msg + `\n\n[Contexto das memórias: ${pool.map(m => m.text.slice(0, 120)).join(' | ')}]`;
 }
 
 // ── Extração de memórias ──
 async function extractMemories(userMsg, reply) {
   try {
-    const prompt = `Analise esta conversa e extraia até 2 informações IMPORTANTES sobre o usuário.
+    const prompt = `Analise esta troca e extraia até 3 fatos IMPORTANTES para ensinar a IA permanentemente.
+Inclua: preferências, projetos, pedidos, informações pessoais, decisões, instruções do usuário.
 Retorne SOMENTE JSON array: [{"cat":"tech|proj|pref|biz|pers|geral","text":"..."}]
 Se não houver nada relevante, retorne: []
 
-Usuário: ${userMsg.slice(0, 250)}
-Resposta: ${reply.slice(0, 250)}`;
+Usuário: ${userMsg.slice(0, 300)}
+Resposta: ${reply.slice(0, 300)}`;
 
     const res = await puterChatRequest(
       [{ role: 'user', content: prompt }],
@@ -1097,7 +1103,7 @@ Resposta: ${reply.slice(0, 250)}`;
 
     const mems = DB.memories;
     let added = 0;
-    for (const item of items.slice(0, 2)) {
+    for (const item of items.slice(0, 3)) {
       if (item?.text?.length > 8) {
         mems.push({ id: Date.now() + '_' + Math.random(), cat: item.cat || 'geral', text: item.text, ts: new Date().toISOString() });
         added++;
@@ -1115,6 +1121,8 @@ Resposta: ${reply.slice(0, 250)}`;
         lastBody.appendChild(badge);
       }
       renderMemPage();
+      renderMemPreview();
+      updateDashboard();
     }
   } catch { /* silencioso */ }
 }
@@ -1429,52 +1437,48 @@ function suggest(t) {
   sendMsg(t);
 }
 
-// ── Conversas ──
+// ── Chat / memória ──
 function newChat() {
-  history = []; convId = null; totalMsgs = 0;
+  if (!confirm('Limpar a tela do chat? As memórias aprendidas permanecem.')) return;
+  history = []; totalMsgs = 0;
   document.getElementById('msgs').innerHTML = `
     <div class="welcome" id="welcome">
       <div class="wlogo"><img src="assets/karen-avatar.png" alt="KAREN"></div>
-      <div class="wbadge">✦ Grátis · Puter.js · sem API key</div>
-      <div><h2 class="wtit">Nova conversa 👋</h2><p class="wsub">O que posso fazer por você?</p></div>
+      <div class="wbadge">🧠 Memória ativa — cada conversa ensina a KAREN</div>
+      <div><h2 class="wtit">Olá de novo 👋</h2><p class="wsub">Lembro do que você já me ensinou. O que vamos fazer?</p></div>
     </div>`;
   setPage('chat');
-  renderSidebarConvos();
 }
-function clearChat() { if (confirm('Limpar esta conversa?')) newChat(); }
+function clearChat() { newChat(); }
 
-function saveConvo(userMsg, reply) {
-  const convos = DB.convos;
-  const id = convId || (Date.now() + '');
-  convId = id;
-  const idx = convos.findIndex(c => c.id === id);
-  const convo = { id, title: userMsg.slice(0, 60), ts: new Date().toISOString(), model: DB.model };
-  if (idx >= 0) convos[idx] = convo; else convos.unshift(convo);
-  DB.convos = convos.slice(0, 50);
-  renderSidebarConvos();
-}
-function renderSidebarConvos() {
+function renderMemPreview() {
   const el = document.getElementById('sconv');
-  const convos = DB.convos;
-  if (!convos.length) { el.innerHTML = '<div style="padding:8px 14px;font-size:12px;color:var(--text3)">Nenhuma ainda</div>'; return; }
-  el.innerHTML = convos.slice(0, 20).map(c => `
-    <div class="citem ${convId === c.id ? 'active' : ''}">
-      <div class="ctit">${esc(c.title)}</div>
-      <div class="ctim">${fmtDate(c.ts)}</div>
+  if (!el) return;
+  const mems = DB.memories.slice(-8).reverse();
+  if (!mems.length) {
+    el.innerHTML = '<div style="padding:8px 4px;font-size:12px;color:var(--text3)">Converse — cada troca vira memória</div>';
+    return;
+  }
+  el.innerHTML = mems.map(m => `
+    <div class="mpitem" onclick="setPage('memory')" title="Ver memórias">
+      <div class="mptag">${esc(m.cat || 'geral')}</div>
+      ${esc(m.text.slice(0, 72))}${m.text.length > 72 ? '…' : ''}
     </div>`).join('');
 }
 
 // ── Dashboard ──
 function updateDashboard() {
-  const mems = DB.memories; const convos = DB.convos;
+  const mems = DB.memories;
   document.getElementById('ds-msgs').textContent  = totalMsgs;
   document.getElementById('ds-mems').textContent  = mems.length;
-  document.getElementById('ds-convs').textContent = convos.length;
+  document.getElementById('ds-learn').textContent = mems.length;
 
-  const dc = document.getElementById('dash-convs');
-  dc.innerHTML = convos.length
-    ? convos.slice(0, 4).map(c => `<div style="padding:7px 0;border-bottom:1px solid var(--border)"><div style="font-size:13px;color:var(--text2)">${esc(c.title)}</div><div style="font-size:11px;color:var(--text3)">${fmtDate(c.ts)} · ${MODELS[c.model] || c.model}</div></div>`).join('')
-    : '<div style="color:var(--text3);font-size:13px">Nenhuma ainda</div>';
+  const dc = document.getElementById('dash-learn');
+  dc.innerHTML = mems.length
+    ? mems.slice(-5).reverse().map(m => `<div style="padding:7px 0;border-bottom:1px solid var(--border)"><div style="font-size:13px;color:var(--text2)">${esc(m.text.slice(0, 90))}</div><div style="font-size:11px;color:var(--text3)">${fmtDate(m.ts)} · ${esc(m.cat || 'geral')}</div></div>`).join('')
+    : '<div style="color:var(--text3);font-size:13px">Converse — cada troca ensina a KAREN</div>';
+
+  renderMemPreview();
 
   const dm = document.getElementById('dash-mems');
   dm.innerHTML = mems.length
@@ -1509,13 +1513,15 @@ function setCat(btn, cat) {
   renderMemPage(document.getElementById('msearch').value, cat);
 }
 function deleteMem(id) {
+  if (id === 'creator_carlos_eber') return;
   DB.memories = DB.memories.filter(m => m.id !== id);
   renderMemPage(document.getElementById('msearch').value, curCat);
   updateDashboard();
 }
 function clearMems() {
-  if (!confirm('Remover TODAS as memórias?')) return;
-  DB.memories = [];
+  if (!confirm('Remover TODAS as memórias? (exceto o criador Carlos Eber)')) return;
+  DB.memories = DB.memories.filter(m => m.id === 'creator_carlos_eber');
+  ensureCreatorMemory();
   renderMemPage(); updateDashboard();
 }
 
