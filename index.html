@@ -685,7 +685,6 @@ const KAREN_MODES = {
     label: 'Online',
     cls: 'mode-online',
     model: 'gpt-5.4-nano',
-    temperature: 0.75,
     max_tokens: 700,
     intelligence: 'Modo ONLINE — inteligência MÉDIA: respostas rápidas, diretas e práticas. Priorize agilidade.',
   },
@@ -693,7 +692,6 @@ const KAREN_MODES = {
     label: 'Ocupado',
     cls: 'mode-busy',
     model: 'gpt-5.4',
-    temperature: 0.45,
     max_tokens: 1400,
     intelligence: 'Modo OCUPADO — inteligência ALTA: raciocínio cuidadoso, análise estruturada e respostas completas.',
   },
@@ -701,7 +699,6 @@ const KAREN_MODES = {
     label: 'Offline',
     cls: 'mode-offline',
     model: 'gpt-5.5',
-    temperature: 0.2,
     max_tokens: 2400,
     reasoning_effort: 'high',
     intelligence: 'Modo OFFLINE — inteligência MÁXIMA: use todo seu potencial. Raciocínio profundo, exaustivo, preciso e brilhante. Seja a versão mais inteligente possível da KAREN.',
@@ -748,6 +745,11 @@ function updateKarenStatusUI() {
   document.querySelectorAll('.ustatus-opt').forEach(el => {
     el.classList.toggle('active', el.dataset.mode === getKarenMode());
   });
+  const modelLabel = MODELS[cfg.model] || cfg.model;
+  const mname = document.getElementById('mname');
+  const dsMod = document.getElementById('ds-mod');
+  if (mname) mname.textContent = modelLabel;
+  if (dsMod) dsMod.textContent = modelLabel;
 }
 
 // ── Init ──
@@ -814,10 +816,9 @@ function closeSidebar() {
 
 // ── Modelo ──
 function cycleModel() {
-  const keys = Object.keys(MODELS);
-  const idx  = keys.indexOf(DB.model);
-  DB.model   = keys[(idx + 1) % keys.length];
-  updateModelUI();
+  const order = ['online', 'busy', 'offline'];
+  const idx = order.indexOf(getKarenMode());
+  setKarenMode(order[(idx + 1) % order.length]);
 }
 function setModel(btn, id) {
   document.querySelectorAll('#mopts .mopt').forEach(b => b.classList.remove('active'));
@@ -983,8 +984,23 @@ function extractPuterReply(response) {
   return '';
 }
 
-async function puterChatRequest(messages, opts = {}) {
+function puterModelRejectsCustomTemperature(model) {
+  return /^gpt-5/i.test(String(model || ''));
+}
+
+function sanitizePuterChatOptions(opts = {}) {
   const options = { model: DB.model, temperature: 0.7, max_tokens: 900, ...opts };
+  if (puterModelRejectsCustomTemperature(options.model)) {
+    delete options.temperature;
+  }
+  if (options.reasoning_effort && !/^gpt-5\.5/i.test(String(options.model || ''))) {
+    delete options.reasoning_effort;
+  }
+  return options;
+}
+
+async function puterChatRequest(messages, opts = {}) {
+  const options = sanitizePuterChatOptions(opts);
   initPuterToken();
 
   try {
@@ -995,19 +1011,22 @@ async function puterChatRequest(messages, opts = {}) {
     const token = DB.puterToken;
     if (!token) throw sdkErr;
 
+    const payload = {
+      model: options.model,
+      messages,
+      max_tokens: options.max_tokens,
+      stream: !!options.stream,
+    };
+    if (options.temperature != null) payload.temperature = options.temperature;
+    if (options.reasoning_effort) payload.reasoning_effort = options.reasoning_effort;
+
     const res = await fetch('https://api.puter.com/puterai/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + token,
       },
-      body: JSON.stringify({
-        model: options.model,
-        messages,
-        temperature: options.temperature,
-        max_tokens: options.max_tokens,
-        stream: !!options.stream,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
@@ -1161,7 +1180,6 @@ function chatOpts(extra = {}) {
   const cfg = getKarenModeConfig();
   const opts = {
     model: cfg.model,
-    temperature: cfg.temperature,
     max_tokens: cfg.max_tokens,
     ...extra,
   };
@@ -2287,7 +2305,7 @@ async function sendRemoteMsg(txt) {
   const tid = addRemoteThinking();
   try {
     const reply = (await withTimeout(
-      puterChatRequest(buildRemoteMessages(), { model: DB.model, max_tokens: 700, stream: false }),
+      puterChatRequest(buildRemoteMessages(), chatOpts({ stream: false })),
       90000,
       'Tempo esgotado.'
     )).trim();
