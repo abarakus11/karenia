@@ -527,7 +527,11 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
             style="width:100%;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:14px;color:var(--text);">
           <input id="wa-key" type="text" placeholder="API Key CallMeBot" onchange="saveWaConfig()"
             style="width:100%;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:14px;color:var(--text);">
-          <button onclick="testWhatsApp()" style="padding:8px 14px;border-radius:8px;font-size:13px;color:#3ddc84;border:1px solid rgba(37,211,102,.28);background:rgba(37,211,102,.08);cursor:pointer;width:fit-content;">📱 Testar envio</button>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <button onclick="testWhatsApp()" style="padding:8px 14px;border-radius:8px;font-size:13px;color:#3ddc84;border:1px solid rgba(37,211,102,.28);background:rgba(37,211,102,.08);cursor:pointer;">📱 Testar envio</button>
+            <button onclick="openWaResume()" style="padding:8px 14px;border-radius:8px;font-size:13px;color:#f0b942;border:1px solid rgba(240,185,66,.28);background:rgba(240,185,66,.08);cursor:pointer;">🔄 Reativar bot</button>
+          </div>
+          <div id="wa-status" style="font-size:12px;color:var(--muted);min-height:18px;"></div>
         </div>
         <div class="strow">
           <div><div class="stlb">Auto-enviar respostas</div><div class="stsb">Manda cada resposta da KAREN pro WhatsApp</div></div>
@@ -659,6 +663,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderMemPreview();
   renderMemPage();
   updateDashboard();
+  initWaDefaults();
   loadWaConfig();
   loadPuterToken();
   updatePuterStatus();
@@ -1406,6 +1411,41 @@ function saveMemManual(btn) {
 }
 
 // ── WhatsApp — CallMeBot API ──
+const WA_BOT_NUMBER = '34611082880';
+
+function initWaDefaults() {
+  if (!DB.waPhone) DB.waPhone = '+5511943870655';
+  if (!DB.waKey) DB.waKey = '1733891';
+}
+
+function normalizeWaPhone(phone) {
+  return String(phone || '').replace(/\D/g, '');
+}
+
+function setWaStatus(msg, ok) {
+  const el = document.getElementById('wa-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.color = ok === false ? '#ff6b6b' : ok === true ? '#3ddc84' : 'var(--muted)';
+}
+
+function parseWaHtml(body) {
+  const plain = String(body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (/paused/i.test(body)) {
+    return { ok: false, msg: 'Conta pausada — clique em "Reativar bot" e envie Resume no WhatsApp.' };
+  }
+  if (/bot is full|0 messages|no messages left/i.test(body)) {
+    return { ok: false, msg: 'CallMeBot sem vagas. Aguarde ou reative com Resume.' };
+  }
+  if (/queued/i.test(body)) {
+    return { ok: true, msg: 'Na fila do CallMeBot — chega em alguns segundos no chat do bot.' };
+  }
+  if (/error|invalid|wrong/i.test(body) && !/queued/i.test(body)) {
+    return { ok: false, msg: plain || 'Erro no CallMeBot' };
+  }
+  return { ok: true, msg: plain || 'Enviado' };
+}
+
 function loadWaConfig() {
   const phone = document.getElementById('wa-phone');
   const key = document.getElementById('wa-key');
@@ -1426,7 +1466,10 @@ function toggleRemoteAuto(el) {
 function saveWaConfig() {
   const phone = document.getElementById('wa-phone')?.value?.trim();
   const key = document.getElementById('wa-key')?.value?.trim();
-  if (phone) DB.waPhone = phone.startsWith('+') ? phone : '+' + phone.replace(/\D/g, '');
+  if (phone) {
+    const digits = normalizeWaPhone(phone);
+    DB.waPhone = digits ? '+' + digits : '';
+  }
   if (key) DB.waKey = key;
 }
 
@@ -1435,31 +1478,93 @@ function toggleWaAuto(el) {
   DB.waAuto = el.classList.contains('on');
 }
 
+function openWaResume() {
+  window.open('https://wa.me/' + WA_BOT_NUMBER + '?text=' + encodeURIComponent('Resume'), '_blank');
+  setWaStatus('Abra o WhatsApp, envie "Resume" ao CallMeBot e aguarde a confirmação.', null);
+}
+
 function buildWaUrl(text) {
-  const phone = DB.waPhone.replace(/\s/g, '');
+  const phone = normalizeWaPhone(DB.waPhone);
   const apikey = DB.waKey.trim();
   if (!phone || !apikey) throw new Error('Configure telefone e API key em Configurações.');
   const msg = String(text || '').trim().slice(0, 1500);
   if (!msg) throw new Error('Nenhuma mensagem para enviar.');
-  return `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(msg)}&apikey=${encodeURIComponent(apikey)}`;
+  return `https://api.callmebot.com/whatsapp.php?phone=${phone}&text=${encodeURIComponent(msg)}&apikey=${encodeURIComponent(apikey)}`;
+}
+
+function waProxyBases() {
+  const bases = ['/api/whatsapp'];
+  try {
+    const host = location.hostname;
+    if (host && host !== 'localhost' && host !== '127.0.0.1') bases.push(location.origin + '/api/whatsapp');
+  } catch {}
+  return [...new Set(bases)];
+}
+
+async function sendWhatsAppViaProxy(text) {
+  const phone = normalizeWaPhone(DB.waPhone);
+  const apikey = DB.waKey.trim();
+  const qs = new URLSearchParams({ phone, text, apikey });
+  let lastErr = null;
+  for (const base of waProxyBases()) {
+    try {
+      const res = await fetch(base + '?' + qs.toString());
+      const data = await res.json();
+      const parsed = parseWaHtml(data.body || data.html || '');
+      if (!res.ok || data.ok === false || !parsed.ok) throw new Error(parsed.msg || data.error || 'Falha no proxy');
+      return parsed.msg;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error('Proxy indisponível');
+}
+
+function sendWhatsAppViaIframe(url) {
+  return new Promise((resolve, reject) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;opacity:0;pointer-events:none';
+    let done = false;
+    const finish = (ok, msg) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      iframe.remove();
+      ok ? resolve(msg) : reject(new Error(msg));
+    };
+    iframe.onload = () => finish(true, 'Na fila — confira o chat do CallMeBot no WhatsApp.');
+    iframe.onerror = () => finish(false, 'Navegador bloqueou o envio');
+    const timer = setTimeout(() => finish(true, 'Na fila — confira o chat do CallMeBot no WhatsApp.'), 8000);
+    document.body.appendChild(iframe);
+    iframe.src = url;
+  });
 }
 
 async function sendWhatsApp(text) {
+  saveWaConfig();
   const url = buildWaUrl(text);
+  try {
+    const result = await sendWhatsAppViaProxy(String(text || '').trim().slice(0, 1500));
+    setWaStatus(result, true);
+    return result;
+  } catch {}
   try {
     const res = await fetch(url);
     const body = await res.text();
-    if (!res.ok || /error/i.test(body)) throw new Error(body || 'Falha no envio');
-    return body;
-  } catch {
-    await new Promise(resolve => {
-      const img = new Image();
-      img.onload = img.onerror = () => resolve();
-      img.src = url;
-      setTimeout(resolve, 2000);
-    });
-    return 'ok';
+    const parsed = parseWaHtml(body);
+    if (!parsed.ok) throw new Error(parsed.msg);
+    setWaStatus(parsed.msg, true);
+    return parsed.msg;
+  } catch (err) {
+    const msg = fmtErr(err);
+    if (err && err.message && !/failed to fetch|network|cors|proxy/i.test(msg)) {
+      setWaStatus(msg, false);
+      throw err;
+    }
   }
+  const result = await sendWhatsAppViaIframe(url);
+  setWaStatus(result, true);
+  return result;
 }
 
 function getLastKarenText() {
@@ -1508,10 +1613,10 @@ async function waMsg(btn) {
 async function testWhatsApp() {
   saveWaConfig();
   try {
-    await sendWhatsApp('✅ KAREN AI conectada ao CallMeBot! Tudo funcionando.');
-    alert('Mensagem de teste enviada! Confira seu WhatsApp.');
+    const r = await sendWhatsApp('KAREN AI teste - se recebeu, esta funcionando!');
+    alert(r + '\n\nConfira o chat do CallMeBot no WhatsApp (nao e conversa com voce mesmo).');
   } catch (err) {
-    alert('Erro: ' + fmtErr(err));
+    alert('Erro: ' + fmtErr(err) + '\n\nTente "Reativar bot" e envie Resume ao CallMeBot.');
   }
 }
 
