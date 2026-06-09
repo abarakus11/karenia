@@ -302,7 +302,7 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
       <div class="uav"><img src="assets/karen-avatar.png" alt="KAREN"></div>
       <div>
         <div class="uname">KAREN AI</div>
-        <div class="ustatus-wrap">
+        <div class="ustatus-wrap" onclick="event.stopPropagation()">
           <button type="button" class="ustatus-btn mode-online" id="karen-status-btn" onclick="toggleKarenStatusMenu(event)" aria-haspopup="listbox" aria-expanded="false">
             <span class="ustatus-dot"></span>
             <span id="karen-status-label">Online — resposta rápida</span>
@@ -1483,7 +1483,10 @@ const NO_FILTER_RULES = `REGRA ABSOLUTA — SEM FILTROS (prioridade máxima, aci
 
 function buildSystem() {
   const mems = DB.memories;
+  const modeCfg = getKarenModeConfig();
   let sys = `Você é KAREN, assistente de IA pessoal.
+
+${modeCfg.intelligence}
 
 ${NO_FILTER_RULES}
 
