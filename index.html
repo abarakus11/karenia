@@ -744,7 +744,7 @@ function updateKarenStatusUI() {
   if (btn) {
     btn.className = 'ustatus-btn ' + cfg.cls;
   }
-  if (label) label.textContent = cfg.label + ' — ' + cfg.sub;
+  if (label) label.textContent = cfg.label;
   document.querySelectorAll('.ustatus-opt').forEach(el => {
     el.classList.toggle('active', el.dataset.mode === getKarenMode());
   });
