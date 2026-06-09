@@ -72,15 +72,12 @@ input,textarea{font-family:inherit;color:inherit;background:none;border:none;out
 .ustatus-btn.mode-busy .ustatus-dot{background:var(--amber);}
 .ustatus-btn.mode-offline{color:var(--accent2);}
 .ustatus-btn.mode-offline .ustatus-dot{background:var(--accent2);}
-.ustatus-menu{display:none;position:absolute;left:0;bottom:calc(100% + 6px);min-width:200px;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:5px;box-shadow:0 8px 28px rgba(0,0,0,.45);z-index:200;}
+.ustatus-menu{display:none;position:absolute;left:0;bottom:calc(100% + 6px);min-width:120px;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:4px;box-shadow:0 8px 28px rgba(0,0,0,.45);z-index:200;}
 .ustatus-menu.open{display:block;}
-.ustatus-opt{display:flex;align-items:flex-start;gap:8px;width:100%;padding:8px 10px;border-radius:7px;font-size:12px;text-align:left;border:none;background:transparent;color:var(--text2);cursor:pointer;}
-.ustatus-opt:hover{background:var(--bg3);color:var(--text);}
+.ustatus-opt{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border-radius:7px;font-size:12px;font-weight:500;text-align:left;border:none;background:transparent;color:var(--text);cursor:pointer;}
+.ustatus-opt:hover{background:var(--bg3);}
 .ustatus-opt.active{background:var(--ag);color:var(--accent2);}
-.ustatus-opt .sico-dot{width:8px;height:8px;border-radius:50%;margin-top:4px;flex-shrink:0;}
-.ustatus-opt .smeta{flex:1;min-width:0;}
-.ustatus-opt .stitle{font-weight:600;color:var(--text);font-size:12px;}
-.ustatus-opt .ssub{font-size:10px;color:var(--text3);margin-top:1px;}
+.ustatus-opt .sico-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
 
 /* Main */
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}
@@ -305,21 +302,18 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
         <div class="ustatus-wrap" onclick="event.stopPropagation()">
           <button type="button" class="ustatus-btn mode-online" id="karen-status-btn" onclick="toggleKarenStatusMenu(event)" aria-haspopup="listbox" aria-expanded="false">
             <span class="ustatus-dot"></span>
-            <span id="karen-status-label">Online — resposta rápida</span>
+            <span id="karen-status-label">Online</span>
             <span class="ustatus-caret">▾</span>
           </button>
           <div class="ustatus-menu" id="karen-status-menu" role="listbox">
             <button type="button" class="ustatus-opt" data-mode="online" onclick="setKarenMode('online')">
-              <span class="sico-dot" style="background:var(--green)"></span>
-              <span class="smeta"><div class="stitle">Online</div><div class="ssub">Inteligência média · rápida</div></span>
+              <span class="sico-dot" style="background:var(--green)"></span>Online
             </button>
             <button type="button" class="ustatus-opt" data-mode="busy" onclick="setKarenMode('busy')">
-              <span class="sico-dot" style="background:var(--amber)"></span>
-              <span class="smeta"><div class="stitle">Ocupado</div><div class="ssub">Inteligência alta · analítica</div></span>
+              <span class="sico-dot" style="background:var(--amber)"></span>Ocupado
             </button>
             <button type="button" class="ustatus-opt" data-mode="offline" onclick="setKarenMode('offline')">
-              <span class="sico-dot" style="background:var(--accent2)"></span>
-              <span class="smeta"><div class="stitle">Offline</div><div class="ssub">Máxima inteligência · profunda</div></span>
+              <span class="sico-dot" style="background:var(--accent2)"></span>Offline
             </button>
           </div>
         </div>
@@ -689,7 +683,6 @@ const MODELS = {
 const KAREN_MODES = {
   online: {
     label: 'Online',
-    sub: 'resposta rápida',
     cls: 'mode-online',
     model: 'gpt-5.4-nano',
     temperature: 0.75,
@@ -698,7 +691,6 @@ const KAREN_MODES = {
   },
   busy: {
     label: 'Ocupado',
-    sub: 'inteligência alta',
     cls: 'mode-busy',
     model: 'gpt-5.4',
     temperature: 0.45,
@@ -707,7 +699,6 @@ const KAREN_MODES = {
   },
   offline: {
     label: 'Offline',
-    sub: 'máxima inteligência',
     cls: 'mode-offline',
     model: 'gpt-5.5',
     temperature: 0.2,
