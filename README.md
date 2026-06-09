@@ -46,6 +46,16 @@ karenia/
 └── README.md
 ```
 
+## Deploy automático
+
+Alterações em `karen-ai.html` (raiz do workspace) são sincronizadas e enviadas ao GitHub automaticamente via:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/sync-and-deploy-karenia.ps1
+```
+
+Hooks do Cursor (`stop` e `afterFileEdit`) disparam o deploy após cada edição.
+
 ## Licença
 
 Uso pessoal — projeto open source.
