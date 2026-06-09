@@ -1843,7 +1843,7 @@ function renderMemPage(filter = '', cat = '') {
     <div class="mcard">
       <div class="mctop"><span class="mtag ${catCls(m.cat)}">${m.cat}</span></div>
       <div class="mctxt">${esc(m.text.slice(0, 160))}${m.text.length > 160 ? '...' : ''}</div>
-      <div class="mcfoot"><span class="mdate">${fmtDate(m.ts)}</span><button class="delbtn" onclick="deleteMem('${m.id}')">🗑</button></div>
+      <div class="mcfoot"><span class="mdate">${fmtDate(m.ts)}</span></div>
     </div>`).join('');
 }
 function filterMems(q) { renderMemPage(q, curCat); }
