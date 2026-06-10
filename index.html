@@ -136,13 +136,19 @@ body.sidebar-open{overflow:hidden;touch-action:none;}
 .pdf-meta{font-size:11px;color:var(--text3);margin-top:3px;}
 .pdf-dlbtn{padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;color:#fff;background:linear-gradient(135deg,#7c6ef8,#9b8ffa);cursor:pointer;flex-shrink:0;white-space:nowrap;}
 .pdf-dlbtn:hover{opacity:.92;}
-.upload-preview{display:none;align-items:center;gap:10px;padding:0 0 8px;max-width:800px;margin:0 auto;}
-.upload-preview.show{display:flex;}
-.upload-preview img{width:52px;height:52px;object-fit:cover;border-radius:10px;border:1px solid var(--border2);flex-shrink:0;}
-.upload-preview-info{flex:1;min-width:0;}
-.upload-preview-name{font-size:12px;color:var(--text2);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.upload-preview-hint{font-size:11px;color:var(--text3);margin-top:2px;}
-.upload-preview-clear{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--text3);background:var(--bg3);border:1px solid var(--border);flex-shrink:0;}
+.attach-preview{display:none;padding:0 0 8px;max-width:800px;margin:0 auto;}
+.attach-preview.show{display:block;}
+.attach-hint{font-size:11px;color:var(--text3);margin-bottom:6px;}
+.attach-list{display:flex;flex-wrap:wrap;gap:8px;}
+.attach-chip{display:flex;align-items:center;gap:8px;padding:7px 10px 7px 7px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;max-width:100%;}
+.attach-chip-thumb{width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0;border:1px solid var(--border);}
+.attach-chip-icon{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--bg2);flex-shrink:0;}
+.attach-chip-info{min-width:0;flex:1;}
+.attach-chip-name{font-size:12px;font-weight:500;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;}
+.attach-chip-type{font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:.4px;}
+.attach-chip-x{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--text3);background:var(--bg2);border:1px solid var(--border);flex-shrink:0;cursor:pointer;}
+.attach-chip-x:hover{color:var(--text);}
+.bubble .user-attach-snippet{font-size:12px;color:var(--text3);margin-top:6px;max-height:72px;overflow:hidden;line-height:1.5;white-space:pre-wrap;word-break:break-word;}
 .mwrap.user .bubble{background:var(--ag2);border-color:rgba(124,110,248,.18);}
 .macts{display:flex;gap:3px;margin-top:5px;opacity:0;transition:opacity .18s;}
 .mwrap:hover .macts{opacity:1;}
@@ -281,6 +287,8 @@ body.sidebar-open{overflow:hidden;touch-action:none;}
   .nitem,.snew,.wa-side,.remote-side{min-height:44px;}
   .itool{min-height:36px;padding:6px 11px;}
   .ifield,.msi,.setup-modal input,#puter-token,#wa-phone,#wa-key{font-size:16px;}
+  .attach-chip-name{max-width:120px;}
+  .attach-hint{font-size:10px;}
   .macts{opacity:1;}
   .iinfo{display:none;}
   .ibot{padding-bottom:8px;}
@@ -416,7 +424,7 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
       <div class="hbtn hdr-hide-mobile" onclick="clearChat()" title="Limpar">🗑️</div>
     </div>
     <input type="file" id="finput" style="display:none" multiple
-      accept="image/jpeg,image/png,image/webp,image/gif,.pdf,.docx,.txt,.xlsx,.csv,.pptx,.md"
+      accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/svg+xml,.html,.htm,.txt,.md,.csv,.json,.pdf,.docx,.xlsx,.pptx"
       onchange="handleFiles(this.files)">
   </header>
 
@@ -463,24 +471,20 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
     </div>
 
     <div id="iarea">
-      <div id="upload-preview" class="upload-preview">
-        <img id="upload-preview-img" alt="Referência">
-        <div class="upload-preview-info">
-          <div class="upload-preview-name" id="upload-preview-name">imagem.png</div>
-          <div class="upload-preview-hint">Descreva a variação que quer gerar</div>
-        </div>
-        <button type="button" class="upload-preview-clear" onclick="clearPendingImage()" aria-label="Remover imagem">✕</button>
+      <div id="attach-preview" class="attach-preview">
+        <div class="attach-hint">📎 Anexos como modelo — peça PDF ou imagem baseada neles</div>
+        <div id="attach-list" class="attach-list"></div>
       </div>
       <div class="iwrap">
         <div class="itools">
-          <button class="itool" id="t-img" onclick="openUpload()" title="Enviar imagem de referência">🖼️ Imagem</button>
+          <button class="itool" id="t-attach" onclick="openUpload()" title="Anexar HTML, imagens, textos...">📎 Anexar</button>
           <button class="itool on" id="t-mem"    title="Memória sempre ativa" style="opacity:.85;cursor:default">🧠 Memória ativa</button>
           <button class="itool on" id="t-stream" onclick="toggleTool('stream')">⚡ Streaming</button>
           <button class="itool"    id="t-web"    onclick="toggleTool('web')"   >🔍 Web</button>
           <button class="itool"    id="t-voice"  onclick="toggleTool('voice')" >🔊 Voz</button>
         </div>
         <textarea class="ifield" id="minput"
-          placeholder="Converse com a KAREN... ou envie uma imagem e peça uma variação"
+          placeholder="Converse com a KAREN... anexe HTML/PNG/JPEG e peça PDF ou imagem"
           rows="1"
           onkeydown="handleKey(event)"
           oninput="autoResize(this)"></textarea>
@@ -728,7 +732,10 @@ let busy    = false;
 let voiceRec = null;
 let curCat  = '';
 let totalMsgs = 0;
-let pendingUserImage = null;
+let pendingAttachments = [];
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACH_BYTES = 8 * 1024 * 1024;
+const MAX_ATTACH_TEXT = 120000;
 const tools = new Set(['stream']);
 
 const KAREN_AVATAR = 'assets/karen-avatar.png';
@@ -1342,7 +1349,7 @@ const IMAGE_SOFT = [
   /(?:me\s+)?(?:manda|manda-me|envia|envie)\s+(?:uma?\s+)?(?:imagem|foto)\s+(?:de|do|da|com)\s+(.+)/i,
 ];
 const IMAGE_FROM_UPLOAD = [
-  /(?:basead[ao]s?|a partir d[aeo]|com base n[ao]|usando (?:a |essa |esta )?(?:imagem|foto)|nessa (?:imagem|foto)|nesta (?:imagem|foto)|com essa (?:imagem|foto)|da foto enviada|da imagem enviada|nessa referência|nesta referência)/i,
+  /(?:basead[ao]s?|a partir d[aeo]|com base n[ao]|usando (?:a |essa |esta |o |o )?(?:imagem|foto|anexo|arquivo)|nessa (?:imagem|foto)|nesta (?:imagem|foto)|com essa (?:imagem|foto)|da foto enviada|da imagem enviada|nessa referência|nesta referência|do anexo|nos anexos|desse arquivo|deste arquivo)/i,
   /^(?:transforma|transforme|converte|converta|reimagina|reimagine|estilize|estiliza|recria|recrie|varie|varia)\b/i,
   /^(?:igual|parecido|similar)\s+(?:com|à|a)\s+(?:essa|esta|a)\s+(?:imagem|foto)/i,
   /^(?:gere|gera|crie|cria|faça|faz|desenhe|desenha|monte|monta)\s+(?:uma?\s+)?(?:nova\s+)?(?:versão|versao|variação|variacao|imagem|arte|foto)\s+(?:basead[ao]|a partir|com base|usando|d[aeo])/i,
@@ -1377,7 +1384,8 @@ function getLastImageSrc() {
 }
 
 function getLastUserUploadedImageSrc() {
-  if (pendingUserImage?.dataUrl) return pendingUserImage.dataUrl;
+  const pending = pendingAttachments.find(a => a.category === 'image');
+  if (pending?.dataUrl) return pending.dataUrl;
   const imgs = document.querySelectorAll('#msgs .user-upload-img');
   if (!imgs.length) return null;
   const src = imgs[imgs.length - 1].src;
@@ -1386,6 +1394,30 @@ function getLastUserUploadedImageSrc() {
 
 function hasAttachedImage() {
   return !!getLastUserUploadedImageSrc();
+}
+
+function hasAttachedFiles() {
+  return pendingAttachments.length > 0;
+}
+
+function getHtmlAttachment() {
+  return pendingAttachments.find(a => a.category === 'html') || null;
+}
+
+function getAttachmentTextContext() {
+  const parts = pendingAttachments
+    .filter(a => a.text && (a.category === 'html' || a.category === 'text'))
+    .map(a => `--- ${a.name} (${a.category}) ---\n${a.text.slice(0, 12000)}`);
+  return parts.join('\n\n');
+}
+
+function getAttachmentSummary() {
+  if (!pendingAttachments.length) return '';
+  return pendingAttachments.map(a => `${a.name} (${a.category})`).join(', ');
+}
+
+function attachIcon(category) {
+  return { image: '🖼️', html: '🌐', text: '📝', pdf: '📄' }[category] || '📎';
 }
 
 function getReferenceImage({ isEdit = false, fromUpload = false } = {}) {
@@ -1415,7 +1447,8 @@ function getLastImageContext() {
     const text = last.textContent.replace(/^🎨\s*|^📷\s*/, '').trim();
     return last.classList.contains('user-img-cap') ? 'referência visual: ' + text : text;
   }
-  if (pendingUserImage?.name) return 'referência visual: ' + pendingUserImage.name;
+  const imgAtt = pendingAttachments.find(a => a.category === 'image');
+  if (imgAtt?.name) return 'referência visual: ' + imgAtt.name;
   const dom = getLastImagePrompt();
   if (dom) return dom;
   for (let i = history.length - 1; i >= 0; i--) {
@@ -1498,6 +1531,7 @@ function detectUploadBasedImageRequest(msg) {
   if (!hasAttachedImage()) return null;
   const t = msg.trim();
   if (t.length < 4) return null;
+  if (/pdf|documento/i.test(t) && !/imagem|foto|arte|desenho/i.test(t)) return null;
   if (IMAGE_FROM_UPLOAD.some(re => re.test(t))) {
     return { prompt: t, fromUpload: true };
   }
@@ -1651,8 +1685,15 @@ function getLastAssistantText(containerId = 'msgs') {
   return null;
 }
 
+function wantsDirectHtmlPdf(msg) {
+  return /html\s*(?:para|em|→|->)?\s*pdf|pdf\s*(?:do|de|desse|deste)\s*html|converta?\s+(?:esse|este|o)\s*html|usar?\s+(?:esse|este)\s*html\s*(?:como|direto)/i.test(msg || '');
+}
+
 function detectPdfRequest(msg) {
   const t = msg.trim();
+  const htmlAtt = getHtmlAttachment();
+  const hasAtt = hasAttachedFiles();
+
   if (/pdf.*(?:anterior|última|ultima|essa resposta|esta resposta|último|ultimo|acima)/i.test(t)) {
     const content = getLastAssistantText();
     if (content) {
@@ -1660,16 +1701,34 @@ function detectPdfRequest(msg) {
       return { title, content, fromLast: true };
     }
   }
-  for (const re of PDF_TRIGGERS) {
-    const m = t.match(re);
-    if (m) {
-      const topic = (m[1] || t).replace(/^["'`]|["'`]$/g, '').trim();
-      if (topic.length > 2) return { topic };
+
+  const pdfIntent = PDF_TRIGGERS.some(re => re.test(t))
+    || /^(?:gera|gere|cria|crie|faça|faz|exporta|exporte)\s+(?:me\s+)?(?:um\s+)?pdf/i.test(t)
+    || (hasAtt && /(?:gera|gere|cria|crie|faça|faz|exporta|exporte|monte|monta)/i.test(t));
+
+  if (pdfIntent) {
+    let topic = t;
+    for (const re of PDF_TRIGGERS) {
+      const m = t.match(re);
+      if (m?.[1]) { topic = m[1].replace(/^["'`]|["'`]$/g, '').trim(); break; }
     }
+    if (topic.length < 4 || /^(?:gera|gere|cria|crie|faça|faz)\s+(?:me\s+)?(?:um\s+)?pdf\.?$/i.test(t)) {
+      topic = hasAtt
+        ? 'documento baseado nos anexos enviados pelo usuário'
+        : 'documento solicitado pelo usuário com base no contexto da conversa';
+    }
+    const req = { topic, fromAttachments: hasAtt };
+    if (htmlAtt) {
+      req.useHtmlTemplate = true;
+      req.directHtml = wantsDirectHtmlPdf(t) || /modelo|layout|template|anexo|arquivo/i.test(t);
+    }
+    return req;
   }
-  if (/^(?:gera|gere|cria|crie|faça|faz)\s+(?:me\s+)?(?:um\s+)?pdf\.?$/i.test(t)) {
-    return { topic: 'documento solicitado pelo usuário com base no contexto da conversa' };
+
+  if (hasAtt && htmlAtt && wantsDirectHtmlPdf(t)) {
+    return { topic: t, fromAttachments: true, useHtmlTemplate: true, directHtml: true };
   }
+
   return null;
 }
 
@@ -1734,16 +1793,13 @@ function buildPdfHtml(title, content) {
     </div>`;
 }
 
-async function renderPdfBlob(title, content) {
+async function htmlToPdfBlob(el, filename) {
   await loadHtml2Pdf();
-  const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;left:-9999px;top:0;width:190mm;padding:0;background:#fff;';
-  el.innerHTML = buildPdfHtml(title, content);
   document.body.appendChild(el);
   try {
     return await html2pdf().set({
       margin: [12, 12, 14, 12],
-      filename: slugifyFilename(title) + '.pdf',
+      filename: filename,
       image: { type: 'jpeg', quality: 0.95 },
       html2canvas: { scale: 2, useCORS: true, letterRendering: true },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
@@ -1752,6 +1808,58 @@ async function renderPdfBlob(title, content) {
   } finally {
     el.remove();
   }
+}
+
+function extractHtmlBody(html) {
+  const body = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  if (body) return body[1];
+  const noDoc = html.replace(/<!DOCTYPE[^>]*>/i, '').replace(/<\/?html[^>]*>/gi, '').replace(/<head[\s\S]*?<\/head>/i, '');
+  return noDoc.trim() || html;
+}
+
+function extractHtmlTitle(html, fallback) {
+  const m = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  return m?.[1]?.trim() || fallback;
+}
+
+async function renderPdfBlob(title, content) {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;left:-9999px;top:0;width:190mm;padding:0;background:#fff;';
+  el.innerHTML = buildPdfHtml(title, content);
+  return htmlToPdfBlob(el, slugifyFilename(title) + '.pdf');
+}
+
+async function renderPdfFromHtmlAttachment(att, pdfReq) {
+  let html = att.text || '';
+  let title = extractHtmlTitle(html, att.name.replace(/\.[^.]+$/, ''));
+
+  if (pdfReq.topic && !pdfReq.directHtml && pdfReq.topic.length > 10) {
+    const prompt = `Você recebeu um HTML modelo. Adapte-o conforme o pedido do usuário e retorne APENAS HTML completo válido (com <html><body>).
+
+Pedido: ${pdfReq.topic}
+
+HTML modelo:
+${html.slice(0, 30000)}
+
+Regras: mantenha estrutura e estilo quando possível; aplique as mudanças pedidas; retorne só HTML.`;
+    const adapted = await withTimeout(
+      puterChatRequest([{ role: 'user', content: prompt }], chatOpts({
+        max_tokens: Math.max(getKarenModeConfig().max_tokens, 3000),
+        stream: false,
+      })),
+      120000,
+      'Tempo esgotado ao adaptar HTML.'
+    );
+    const raw = (typeof adapted === 'string' ? adapted : extractPuterReply(adapted)).trim()
+      .replace(/^```html\s*/i, '').replace(/```$/i, '').trim();
+    if (raw.includes('<')) html = raw;
+    title = extractHtmlTitle(html, title);
+  }
+
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;left:-9999px;top:0;width:190mm;padding:0;background:#fff;';
+  el.innerHTML = extractHtmlBody(html);
+  return { blob: await htmlToPdfBlob(el, slugifyFilename(title) + '.pdf'), title };
 }
 
 function downloadPdfBlob(url, filename) {
@@ -1806,17 +1914,38 @@ function appendPdfMsg(title, blobUrl, blob) {
 
 async function callPdfAI(tid, pdfReq) {
   let title, content;
+  const htmlAtt = getHtmlAttachment();
+
+  if (htmlAtt && (pdfReq.directHtml || (pdfReq.useHtmlTemplate && wantsDirectHtmlPdf(pdfReq.topic)))) {
+    removeThinking(tid);
+    const { blob, title: htmlTitle } = await renderPdfFromHtmlAttachment(htmlAtt, { ...pdfReq, directHtml: true });
+    const url = URL.createObjectURL(blob);
+    appendPdfMsg(htmlTitle, url, blob);
+    clearPendingAttachments();
+    return '📄 PDF gerado: ' + htmlTitle;
+  }
+
+  if (htmlAtt && pdfReq.useHtmlTemplate && pdfReq.fromAttachments) {
+    removeThinking(tid);
+    const { blob, title: htmlTitle } = await renderPdfFromHtmlAttachment(htmlAtt, pdfReq);
+    const url = URL.createObjectURL(blob);
+    appendPdfMsg(htmlTitle, url, blob);
+    clearPendingAttachments();
+    return '📄 PDF gerado: ' + htmlTitle;
+  }
+
   if (pdfReq.fromLast && pdfReq.content) {
     title = pdfReq.title || 'Documento KAREN';
     content = pdfReq.content;
   } else {
     const topic = pdfReq.topic || 'documento solicitado';
     const ctx = history.slice(-6).map(h => `${h.role}: ${h.content.slice(0, 300)}`).join('\n');
+    const attachCtx = getAttachmentTextContext();
     const prompt = `Gere o conteúdo completo de um documento PDF profissional em português do Brasil.
 
 Assunto: ${topic}
 
-${ctx ? 'Contexto da conversa:\n' + ctx + '\n' : ''}
+${attachCtx ? 'MODELO / REFERÊNCIA DOS ANEXOS (use como base de estrutura e conteúdo):\n' + attachCtx + '\n\n' : ''}${ctx ? 'Contexto da conversa:\n' + ctx + '\n' : ''}
 Regras OBRIGATÓRIAS:
 - Retorne APENAS o documento, sem prefácio, sem "claro" ou comentários
 - Primeira linha exata: TÍTULO: (título curto e profissional)
@@ -1842,6 +1971,7 @@ Regras OBRIGATÓRIAS:
   const blob = await renderPdfBlob(title, content);
   const url = URL.createObjectURL(blob);
   appendPdfMsg(title, url, blob);
+  clearPendingAttachments();
   return '📄 PDF gerado: ' + title;
 }
 
@@ -1878,7 +2008,7 @@ async function callImageAI(tid, prompt, opts = {}) {
     wrap?.remove();
     throw new Error('A imagem não foi gerada. Tente novamente.');
   }
-  clearPendingImage();
+  clearPendingAttachments();
   return '🎨 Imagem gerada: ' + prompt;
 }
 
@@ -1965,8 +2095,8 @@ Comportamento:
 - Não invente emoções ou problemas do usuário (confusão, tristeza, etc.) a menos que ele mencione.
 - Não critique como o usuário escreveu ou perguntou.
 - Se perguntarem o que você sabe fazer, liste suas capacidades: conversar, planejar, escrever textos, ajudar com código, gerar imagens (diga: "gere uma imagem de..."), gerar PDFs (diga: "gere um PDF sobre..."), lembrar informações, criar lembretes (diga: "me lembre de..."), Assistente Remoto via WhatsApp.
-- Imagens: o SISTEMA gera automaticamente ao pedir criar ou alterar (ex: "retire a logo", "coloque um cachorro do lado"). O usuário pode enviar uma foto de referência e pedir variações (ex: "gere versão cyberpunk baseada nessa imagem"). Nunca diga "imagem gerada" em texto — o sistema exibe a imagem visualmente.
-- PDFs: o SISTEMA gera automaticamente ao pedir (ex: "gere um PDF sobre...", "exporte em PDF"). Nunca diga apenas que vai gerar — o sistema cria o arquivo para download. Você pode escrever o conteúdo, mas o PDF é montado pelo sistema.
+- Imagens: o SISTEMA gera automaticamente ao pedir criar ou alterar (ex: "retire a logo", "coloque um cachorro do lado"). O usuário pode anexar PNG/JPEG/HTML etc. como modelo e pedir variações. Nunca diga "imagem gerada" em texto — o sistema exibe a imagem visualmente.
+- PDFs: o SISTEMA gera automaticamente ao pedir (ex: "gere um PDF sobre...", "converta esse HTML em PDF"). Anexos HTML/TXT servem de modelo. Nunca diga apenas que vai gerar — o sistema cria o arquivo para download.
 - WhatsApp: quando o usuário pedir envio no WhatsApp, confirme a mensagem entre aspas ou após ">". O SISTEMA envia automaticamente — você não envia manualmente, mas pode dizer "vou enviar agora no WhatsApp" pois o sistema executa em seguida.
 - Seja útil, direta e amigável.
 - Você aprende continuamente pelas memórias. Conversas antigas NÃO ficam salvas — só o que foi ensinado nas memórias permanece. Use sempre as memórias como sua base de conhecimento.
@@ -2078,7 +2208,7 @@ function stopVoice() {
   document.getElementById('iarea').style.display = '';
 }
 
-// ── Upload ──
+// ── Anexos ──
 function openUpload() { document.getElementById('finput').click(); }
 
 function readFileAsDataURL(file) {
@@ -2090,50 +2220,110 @@ function readFileAsDataURL(file) {
   });
 }
 
-function showUploadPreview(dataUrl, name) {
-  const box = document.getElementById('upload-preview');
-  const img = document.getElementById('upload-preview-img');
-  const label = document.getElementById('upload-preview-name');
-  if (!box || !img || !label) return;
-  img.src = dataUrl;
-  label.textContent = name || 'imagem';
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Falha ao ler o arquivo.'));
+    reader.readAsText(file, 'UTF-8');
+  });
+}
+
+function classifyFile(file) {
+  const name = (file.name || '').toLowerCase();
+  const mime = (file.type || '').toLowerCase();
+  if (mime.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(name)) return 'image';
+  if (mime.includes('html') || /\.(html?|htm)$/i.test(name)) return 'html';
+  if (mime === 'application/pdf' || /\.pdf$/i.test(name)) return 'pdf';
+  if (mime.startsWith('text/') || /\.(txt|md|csv|json|xml|log)$/i.test(name)) return 'text';
+  return 'text';
+}
+
+function renderAttachPreview() {
+  const box = document.getElementById('attach-preview');
+  const list = document.getElementById('attach-list');
+  if (!box || !list) return;
+  list.innerHTML = '';
+  if (!pendingAttachments.length) {
+    box.classList.remove('show');
+    return;
+  }
   box.classList.add('show');
+  for (const att of pendingAttachments) {
+    const chip = document.createElement('div');
+    chip.className = 'attach-chip';
+    chip.title = att.name;
+    let visual = '';
+    if (att.category === 'image' && att.dataUrl) {
+      visual = `<img class="attach-chip-thumb" src="${att.dataUrl}" alt="">`;
+    } else {
+      visual = `<div class="attach-chip-icon">${attachIcon(att.category)}</div>`;
+    }
+    chip.innerHTML = `${visual}<div class="attach-chip-info"><div class="attach-chip-name">${esc(att.name)}</div><div class="attach-chip-type">${att.category}</div></div>`;
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'attach-chip-x';
+    x.textContent = '✕';
+    x.setAttribute('aria-label', 'Remover ' + att.name);
+    x.onclick = () => removeAttachment(att.id);
+    chip.appendChild(x);
+    list.appendChild(chip);
+  }
 }
 
-function clearPendingImage() {
-  pendingUserImage = null;
-  const box = document.getElementById('upload-preview');
-  const img = document.getElementById('upload-preview-img');
-  if (box) box.classList.remove('show');
-  if (img) img.removeAttribute('src');
+function clearPendingAttachments() {
+  pendingAttachments = [];
+  renderAttachPreview();
 }
 
-async function handleImageUpload(file) {
-  if (!file.type.startsWith('image/')) return false;
-  if (file.size > 8 * 1024 * 1024) {
-    appendMsg('assistant', '⚠️ Imagem muito grande. Use arquivos de até 8 MB.');
-    return true;
+function removeAttachment(id) {
+  pendingAttachments = pendingAttachments.filter(a => a.id !== id);
+  renderAttachPreview();
+}
+
+async function addAttachment(file) {
+  if (pendingAttachments.length >= MAX_ATTACHMENTS) {
+    appendMsg('assistant', `⚠️ Máximo de ${MAX_ATTACHMENTS} anexos por vez.`);
+    return false;
   }
-  try {
-    ensurePuterReady();
-  } catch (err) {
-    appendMsg('assistant', '⚠️ ' + fmtErr(err));
-    return true;
+  if (file.size > MAX_ATTACH_BYTES) {
+    appendMsg('assistant', '⚠️ Arquivo muito grande. Máximo 8 MB por anexo.');
+    return false;
   }
-  const dataUrl = await readFileAsDataURL(file);
-  pendingUserImage = { dataUrl, name: file.name };
-  appendUserImageMsg(file.name, dataUrl);
-  history.push({ role: 'user', content: '📷 Imagem enviada: ' + file.name });
-  trimHistory();
-  totalMsgs++;
-  showUploadPreview(dataUrl, file.name);
-  appendMsg('assistant', '📷 **Imagem recebida!** Agora descreva o que quer gerar — por exemplo:\n\n• *"gere uma versão cyberpunk baseada nessa foto"*\n• *"transforme em desenho animado"*\n• *"mesma cena, mas à noite com neon"*\n• *"coloque um cachorro do lado"*');
+
+  const category = classifyFile(file);
+  const att = {
+    id: 'att_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    name: file.name,
+    category,
+    mime: file.type || '',
+    size: file.size,
+  };
+
+  if (category === 'image') {
+    att.dataUrl = await readFileAsDataURL(file);
+  } else if (category === 'pdf') {
+    att.text = '';
+    att.note = 'PDF anexado — use como referência visual no pedido';
+  } else {
+    const text = await readFileAsText(file);
+    if (text.length > MAX_ATTACH_TEXT) {
+      appendMsg('assistant', '⚠️ Arquivo de texto muito grande. Máximo ~120 KB de conteúdo.');
+      return false;
+    }
+    att.text = text;
+  }
+
+  pendingAttachments.push(att);
+  renderAttachPreview();
+  appendUserAttachmentMsg(att);
   return true;
 }
 
-function appendUserImageMsg(name, dataUrl) {
+function appendUserAttachmentMsg(att) {
   const wrap = document.createElement('div');
   wrap.className = 'mwrap user';
+  wrap.dataset.attachId = att.id;
   const av = document.createElement('div');
   av.className = 'mav u';
   av.textContent = 'U';
@@ -2146,18 +2336,75 @@ function appendUserImageMsg(name, dataUrl) {
   bub.className = 'bubble';
   const cap = document.createElement('div');
   cap.className = 'img-cap user-img-cap';
-  cap.textContent = '📷 ' + name;
-  const img = document.createElement('img');
-  img.src = dataUrl;
-  img.className = 'user-upload-img';
-  img.alt = name;
-  img.loading = 'lazy';
-  bub.append(cap, img);
+  cap.textContent = attachIcon(att.category) + ' ' + att.name;
+
+  if (att.category === 'image' && att.dataUrl) {
+    const img = document.createElement('img');
+    img.src = att.dataUrl;
+    img.className = 'user-upload-img';
+    img.alt = att.name;
+    img.loading = 'lazy';
+    bub.append(cap, img);
+  } else {
+    bub.appendChild(cap);
+    if (att.text) {
+      const snip = document.createElement('div');
+      snip.className = 'user-attach-snippet';
+      snip.textContent = att.text.slice(0, 280) + (att.text.length > 280 ? '…' : '');
+      bub.appendChild(snip);
+    } else if (att.category === 'pdf') {
+      const snip = document.createElement('div');
+      snip.className = 'user-attach-snippet';
+      snip.textContent = 'PDF anexado como modelo de referência.';
+      bub.appendChild(snip);
+    }
+  }
+
   body.append(nm, bub);
   wrap.append(av, body);
   document.getElementById('msgs').appendChild(wrap);
   scroll();
   return wrap;
+}
+
+function attachmentHintMessage() {
+  const types = [...new Set(pendingAttachments.map(a => a.category))];
+  const lines = ['📎 **Anexos prontos!** Use como modelo e peça:'];
+  if (types.includes('image')) {
+    lines.push('• *"gere imagem baseada no anexo"*');
+    lines.push('• *"transforme em estilo cyberpunk"*');
+  }
+  if (types.includes('html')) {
+    lines.push('• *"converta esse HTML em PDF"*');
+    lines.push('• *"gere PDF usando esse layout com dados X"*');
+  }
+  if (types.includes('text')) {
+    lines.push('• *"gere PDF baseado nesse arquivo"*');
+  }
+  if (types.includes('pdf')) {
+    lines.push('• *"gere PDF inspirado nesse modelo"*');
+  }
+  return lines.join('\n');
+}
+
+async function handleAttachmentBatch(files) {
+  const ws = document.getElementById('welcome');
+  if (ws) ws.remove();
+  try { ensurePuterReady(); } catch (err) {
+    appendMsg('assistant', '⚠️ ' + fmtErr(err));
+    return;
+  }
+
+  let added = 0;
+  for (const f of files) {
+    if (await addAttachment(f)) added++;
+  }
+  if (added > 0) {
+    history.push({ role: 'user', content: '📎 Anexos: ' + getAttachmentSummary() });
+    trimHistory();
+    totalMsgs++;
+    appendMsg('assistant', attachmentHintMessage());
+  }
 }
 
 function handleImagePaste(e) {
@@ -2168,21 +2415,13 @@ function handleImagePaste(e) {
     const file = item.getAsFile();
     if (!file) continue;
     e.preventDefault();
-    const ws = document.getElementById('welcome');
-    if (ws) ws.remove();
-    handleImageUpload(file);
+    handleAttachmentBatch([file]);
     break;
   }
 }
 
 async function handleFiles(files) {
-  const ws = document.getElementById('welcome');
-  if (ws) ws.remove();
-  for (const f of files) {
-    if (await handleImageUpload(f)) continue;
-    appendMsg('user', '📎 ' + f.name);
-    appendMsg('assistant', `📄 **${f.name}** recebido!\n\nPara indexação RAG completa, o backend Python é necessário. Por enquanto, cole o conteúdo do arquivo diretamente no chat e eu processo normalmente!`);
-  }
+  await handleAttachmentBatch(files);
   document.getElementById('finput').value = '';
 }
 
