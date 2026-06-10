@@ -1816,17 +1816,11 @@ function buildPdfHtml(title, content) {
 }
 
 async function htmlToPdfBlob(el, filename) {
-  await loadHtml2Pdf();
   document.body.appendChild(el);
   try {
-    return await html2pdf().set({
-      margin: [12, 12, 14, 12],
-      filename: filename,
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: { scale: 2, useCORS: true, letterRendering: true },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-    }).from(el).outputPdf('blob');
+    const height = Math.max(el.scrollHeight, el.offsetHeight, 1123);
+    el.style.height = height + 'px';
+    return await captureElementToPdf(el, filename.replace(/\.pdf$/i, ''), height);
   } finally {
     el.remove();
   }
@@ -1852,53 +1846,164 @@ function normalizeFullHtml(html) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${trimmed}</body></html>`;
 }
 
-async function renderFullHtmlToPdf(html, title) {
+function htmlToPlainText(html) {
+  const el = document.createElement('div');
+  el.innerHTML = extractHtmlBody(html);
+  return (el.innerText || el.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function prepareDocForPdf(doc) {
+  if (!doc?.body) return;
+  const fix = doc.createElement('style');
+  fix.id = 'karen-pdf-fix';
+  fix.textContent = `
+    html, body { height: auto !important; min-height: auto !important; overflow: visible !important; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { background: #ffffff !important; color: #111111 !important; }
+    img, svg, canvas { opacity: 1 !important; visibility: visible !important; }
+  `;
+  doc.head?.appendChild(fix);
+  doc.body.style.height = 'auto';
+  doc.body.style.overflow = 'visible';
+  doc.documentElement.style.height = 'auto';
+  doc.documentElement.style.overflow = 'visible';
+}
+
+async function waitForIframeReady(iframe) {
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Tempo esgotado ao carregar o HTML.')), 55000);
+    iframe.onload = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+  });
+  const doc = iframe.contentDocument;
+  await new Promise(r => setTimeout(r, 3200));
+  const imgs = [...(doc?.images || [])];
+  await Promise.all(imgs.map(img => {
+    if (img.complete) return Promise.resolve();
+    return new Promise(res => { img.onload = img.onerror = res; });
+  }));
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+}
+
+function getCaptureHeight(doc) {
+  const body = doc.body;
+  const html = doc.documentElement;
+  return Math.max(
+    body?.scrollHeight || 0,
+    body?.offsetHeight || 0,
+    html?.scrollHeight || 0,
+    html?.offsetHeight || 0,
+    1123
+  );
+}
+
+async function captureElementToPdf(el, title, height) {
   await loadHtml2Pdf();
+  return html2pdf().set({
+    margin: [0, 0, 0, 0],
+    filename: slugifyFilename(title) + '.pdf',
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: 794,
+      windowWidth: 794,
+      height,
+      windowHeight: height,
+      scrollX: 0,
+      scrollY: -window.scrollY,
+      onclone: (clonedDoc) => {
+        const b = clonedDoc.body;
+        const h = clonedDoc.documentElement;
+        if (b) {
+          b.style.background = '#ffffff';
+          b.style.opacity = '1';
+          b.style.visibility = 'visible';
+          b.style.height = 'auto';
+          b.style.overflow = 'visible';
+        }
+        if (h) {
+          h.style.background = '#ffffff';
+          h.style.height = 'auto';
+          h.style.overflow = 'visible';
+        }
+      },
+    },
+    jsPDF: { unit: 'px', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'legacy'] },
+  }).from(el).outputPdf('blob');
+}
+
+async function renderHtmlInHiddenContainer(html) {
+  const { styles, links } = extractHtmlStyles(html);
+  const body = extractHtmlBody(html);
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:-12000px;top:0;width:794px;background:#fff;color:#111;visibility:visible;opacity:1;z-index:-1;';
+  host.innerHTML = `${links}<style>${styles}</style><div class="karen-html-root">${body}</div>`;
+  document.body.appendChild(host);
+  await new Promise(r => setTimeout(r, 2000));
+  const imgs = [...host.querySelectorAll('img')];
+  await Promise.all(imgs.map(img => {
+    if (img.complete) return Promise.resolve();
+    return new Promise(res => { img.onload = img.onerror = res; });
+  }));
+  return host;
+}
+
+async function renderFullHtmlToPdf(html, title) {
   const fullHtml = normalizeFullHtml(html);
   if (!fullHtml) throw new Error('HTML vazio ou inválido.');
 
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;height:1123px;border:0;opacity:0;pointer-events:none;';
+  iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+  iframe.style.cssText = 'position:fixed;left:-12000px;top:0;width:794px;height:1123px;border:0;visibility:visible;opacity:1;pointer-events:none;background:#fff;';
   document.body.appendChild(iframe);
 
+  let blobUrl = '';
   try {
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Tempo esgotado ao renderizar o HTML.')), 50000);
-      iframe.onload = () => {
-        clearTimeout(timer);
-        setTimeout(resolve, 1800);
-      };
-      iframe.srcdoc = fullHtml;
-    });
+    const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+    blobUrl = URL.createObjectURL(blob);
+    iframe.src = blobUrl;
 
+    await waitForIframeReady(iframe);
     const doc = iframe.contentDocument;
-    const target = doc?.documentElement || doc?.body;
-    if (!target?.innerHTML?.trim()) throw new Error('Não foi possível renderizar o conteúdo do HTML.');
+    const body = doc?.body;
+    if (!body?.innerHTML?.trim()) throw new Error('HTML sem conteúdo no body.');
 
-    return await html2pdf().set({
-      margin: [4, 4, 4, 4],
-      filename: slugifyFilename(title) + '.pdf',
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        width: 794,
-        windowWidth: 794,
-      },
-      jsPDF: { unit: 'px', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'] },
-    }).from(target).outputPdf('blob');
+    prepareDocForPdf(doc);
+    const height = getCaptureHeight(doc);
+    iframe.style.height = height + 'px';
+
+    const visibleText = body.innerText?.trim();
+    const hasVisual = body.querySelector('img, canvas, svg, table, h1, h2, p, div');
+    if (!visibleText && !hasVisual) throw new Error('Página sem conteúdo visível após renderizar.');
+
+    return await captureElementToPdf(body, title, height);
   } catch (iframeErr) {
-    const { styles, links } = extractHtmlStyles(html);
-    const body = extractHtmlBody(html);
-    const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;padding:0;background:#fff;';
-    el.innerHTML = `${links}<style>${styles}</style><div>${body}</div>`;
-    return htmlToPdfBlob(el, slugifyFilename(title) + '.pdf');
+    let host = null;
+    try {
+      host = await renderHtmlInHiddenContainer(html);
+      const root = host.querySelector('.karen-html-root') || host;
+      const height = Math.max(root.scrollHeight, root.offsetHeight, 1123);
+      host.style.height = height + 'px';
+      return await captureElementToPdf(root, title, height);
+    } catch {
+      const plain = htmlToPlainText(html);
+      if (plain.length > 80) {
+        return renderPdfBlob(title, plain);
+      }
+      throw new Error('Não foi possível renderizar o HTML visualmente: ' + fmtErr(iframeErr));
+    } finally {
+      host?.remove();
+    }
   } finally {
     iframe.remove();
+    if (blobUrl) URL.revokeObjectURL(blobUrl);
   }
 }
 
