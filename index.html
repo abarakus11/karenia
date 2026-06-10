@@ -864,6 +864,7 @@ function initMobileUX() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  blockPuterBalanceModals();
   purgeConvoHistory();
   ensureCreatorMemory();
   initPuterToken();
@@ -1622,6 +1623,95 @@ function imageRefOpts(refImage) {
   return { provider: 'together', image_url: refImage, prompt_strength: 0.82 };
 }
 
+function isPuterBalanceError(err) {
+  const s = fmtErr(err).toLowerCase();
+  return /low balance|insufficient funds|not enough funding|enough funding|out of credits|no credits|billing|upgrade.*continue|saldo|crédito|credito/i.test(s);
+}
+
+function blockPuterBalanceModals() {
+  const isBalancePopup = (el) => {
+    if (!el?.textContent || el.closest?.('#app')) return false;
+    const t = el.textContent.trim();
+    return t.length < 600 && /low balance|not enough funding|upgrade now|your account has not enough/i.test(t);
+  };
+  const removeBalancePopups = (node) => {
+    if (node.nodeType !== 1) return;
+    if (isBalancePopup(node)) { node.remove(); return; }
+    node.querySelectorAll?.('div, dialog, section, [role="dialog"]').forEach(el => {
+      if (isBalancePopup(el)) el.remove();
+    });
+  };
+  new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) removeBalancePopups(node);
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true });
+}
+
+async function loadImageFromUrl(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Falha ao carregar imagem.'));
+    img.src = url;
+  });
+}
+
+async function pollinationsTxt2Img(prompt, refImage) {
+  const p = String(prompt || '').trim().slice(0, 1800);
+  if (!p) throw new Error('Prompt vazio.');
+
+  const seed = Math.floor(Math.random() * 999999);
+  const baseParams = `model=flux&width=1024&height=1024&nologo=true&safe=false&enhance=false&seed=${seed}`;
+  const refHint = refImage ? ' Mantenha estilo e composição da referência visual enviada.' : '';
+  const fullPrompt = p + refHint;
+
+  const urls = [
+    `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?${baseParams}`,
+    `https://gen.pollinations.ai/image/${encodeURIComponent(fullPrompt)}?${baseParams}`,
+  ];
+
+  if (refImage?.startsWith('data:')) {
+    try {
+      const res = await fetch('https://gen.pollinations.ai/v1/images/generations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: fullPrompt,
+          model: 'flux',
+          image: refImage,
+          response_format: 'b64_json',
+          nologo: true,
+          safe: false,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const b64 = data?.data?.[0]?.b64_json;
+        if (b64) {
+          const img = await loadImageFromUrl('data:image/jpeg;base64,' + b64);
+          return img;
+        }
+      }
+    } catch { /* fallback GET */ }
+  } else if (refImage) {
+    urls.unshift(
+      `https://gen.pollinations.ai/image/${encodeURIComponent(fullPrompt)}?${baseParams}&image=${encodeURIComponent(refImage)}`
+    );
+  }
+
+  const errors = [];
+  for (const url of urls) {
+    try {
+      return await withTimeout(loadImageFromUrl(url), 120000, 'timeout pollinations');
+    } catch (err) {
+      errors.push(fmtErr(err));
+    }
+  }
+  throw new Error(errors.join(' | ') || 'Pollinations indisponível');
+}
+
 async function puterTxt2Img(prompt, refImage) {
   initPuterToken();
   const errors = [];
@@ -1637,8 +1727,29 @@ async function puterTxt2Img(prompt, refImage) {
         'timeout'
       );
     } catch (err) {
+      if (isPuterBalanceError(err)) break;
       errors.push((opts.model || 'img') + ': ' + fmtErr(err));
     }
+  }
+  throw new Error(errors.join(' | ') || 'Puter indisponível');
+}
+
+async function generateImageAI(prompt, refImage) {
+  const errors = [];
+  try {
+    return await pollinationsTxt2Img(prompt, refImage);
+  } catch (err) {
+    errors.push('nuvem-grátis: ' + fmtErr(err));
+  }
+  try {
+    return await puterTxt2Img(prompt, refImage);
+  } catch (err) {
+    if (!isPuterBalanceError(err)) errors.push('puter: ' + fmtErr(err));
+  }
+  try {
+    return await pollinationsTxt2Img(prompt + ' highly detailed', refImage);
+  } catch (err) {
+    errors.push('retry: ' + fmtErr(err));
   }
   throw new Error(errors.join(' | ') || 'Falha na geração de imagem');
 }
@@ -2425,7 +2536,7 @@ async function callImageAI(tid, prompt, opts = {}) {
   const isEdit = !!opts.isEdit;
   const fromUpload = !!opts.fromUpload;
   const refImg = getReferenceImage({ isEdit, fromUpload });
-  const result = await puterTxt2Img(prompt, refImg);
+  const result = await generateImageAI(prompt, refImg);
   removeThinking(tid);
   const wrap = appendImageMsg(prompt, result);
   const img = wrap?.querySelector('img');
