@@ -865,6 +865,7 @@ function initMobileUX() {
 
 document.addEventListener('DOMContentLoaded', () => {
   blockPuterBalanceModals();
+  neuterPuterImageAPI();
   purgeConvoHistory();
   ensureCreatorMemory();
   initPuterToken();
@@ -991,6 +992,7 @@ function loadPuterToken() {
 function initPuterToken() {
   if (typeof puter !== 'undefined' && DB.puterToken) {
     puter.setAuthToken(DB.puterToken);
+    neuterPuterImageAPI();
   }
 }
 
@@ -1625,22 +1627,42 @@ function imageRefOpts(refImage) {
 
 function isPuterBalanceError(err) {
   const s = fmtErr(err).toLowerCase();
-  return /low balance|insufficient funds|not enough funding|enough funding|out of credits|no credits|billing|upgrade.*continue|saldo|crédito|credito/i.test(s);
+  return /low balance|insufficient|not enough funding|enough funding|out of credits|no credits|billing|upgrade.*continue|saldo|crédito|credito/i.test(s);
+}
+
+function neuterPuterImageAPI() {
+  const patch = () => {
+    if (!window.puter?.ai) return false;
+    puter.ai.txt2img = async () => {
+      throw new Error('puter-img-disabled');
+    };
+    return true;
+  };
+  if (!patch()) {
+    const iv = setInterval(() => { if (patch()) clearInterval(iv); }, 250);
+    setTimeout(() => clearInterval(iv), 15000);
+  }
 }
 
 function blockPuterBalanceModals() {
   const isBalancePopup = (el) => {
     if (!el?.textContent || el.closest?.('#app')) return false;
     const t = el.textContent.trim();
-    return t.length < 600 && /low balance|not enough funding|upgrade now|your account has not enough/i.test(t);
+    return t.length < 800 && /low balance|not enough funding|insufficient credits|upgrade now|your account has not enough|please upgrade/i.test(t);
   };
   const removeBalancePopups = (node) => {
     if (node.nodeType !== 1) return;
     if (isBalancePopup(node)) { node.remove(); return; }
-    node.querySelectorAll?.('div, dialog, section, [role="dialog"]').forEach(el => {
+    node.querySelectorAll?.('div, dialog, section, [role="dialog"], iframe').forEach(el => {
       if (isBalancePopup(el)) el.remove();
     });
   };
+  const sweep = () => {
+    document.querySelectorAll('body > div, body > dialog, [role="dialog"]').forEach(el => {
+      if (isBalancePopup(el)) el.remove();
+    });
+  };
+  sweep();
   new MutationObserver((mutations) => {
     for (const m of mutations) {
       for (const node of m.addedNodes) removeBalancePopups(node);
@@ -1648,110 +1670,84 @@ function blockPuterBalanceModals() {
   }).observe(document.documentElement, { childList: true, subtree: true });
 }
 
-async function loadImageFromUrl(url) {
+function preparePollinationsPrompt(prompt) {
+  let p = String(prompt || '').trim();
+  if (!p) return '';
+  const lines = p.split('\n').filter(l => {
+    const t = l.trim();
+    return t && !/^\d+[\.\)]\s*\d{1,2}:\d{2}/.test(t);
+  });
+  if (lines.length < p.split('\n').length) p = lines.join('. ');
+  p = p.replace(/\s+/g, ' ').trim();
+  if (p.length > 680) p = p.slice(0, 677) + '...';
+  return p;
+}
+
+function loadPollinationsImage(url, timeoutMs = 180000) {
   return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Falha ao carregar imagem.'));
-    img.src = url;
+    const img = document.createElement('img');
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      ok ? resolve(img) : reject(new Error('Falha ao carregar imagem gerada.'));
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    img.onload = () => {
+      if (img.naturalWidth > 16 && img.naturalHeight > 16) finish(true);
+      else finish(false);
+    };
+    img.onerror = () => finish(false);
+    const sep = url.includes('?') ? '&' : '?';
+    img.src = url + sep + '_k=' + Date.now();
   });
 }
 
-async function pollinationsTxt2Img(prompt, refImage) {
-  const p = String(prompt || '').trim().slice(0, 1800);
+function buildPollinationsUrls(prompt, model = 'flux') {
+  const seed = Math.floor(Math.random() * 999999);
+  const q = `width=1024&height=1024&nologo=true&safe=false&enhance=false&seed=${seed}&model=${model}`;
+  const enc = encodeURIComponent(prompt);
+  return [
+    `https://image.pollinations.ai/prompt/${enc}?${q}`,
+    `https://image.pollinations.ai/prompt/${enc}?model=${model}&width=1024&height=1024&nologo=true&seed=${seed}`,
+  ];
+}
+
+async function pollinationsTxt2Img(prompt, refImage, model = 'flux') {
+  const p = preparePollinationsPrompt(prompt);
   if (!p) throw new Error('Prompt vazio.');
 
-  const seed = Math.floor(Math.random() * 999999);
-  const baseParams = `model=flux&width=1024&height=1024&nologo=true&safe=false&enhance=false&seed=${seed}`;
-  const refHint = refImage ? ' Mantenha estilo e composição da referência visual enviada.' : '';
-  const fullPrompt = p + refHint;
-
-  const urls = [
-    `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?${baseParams}`,
-    `https://gen.pollinations.ai/image/${encodeURIComponent(fullPrompt)}?${baseParams}`,
-  ];
-
-  if (refImage?.startsWith('data:')) {
-    try {
-      const res = await fetch('https://gen.pollinations.ai/v1/images/generations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: fullPrompt,
-          model: 'flux',
-          image: refImage,
-          response_format: 'b64_json',
-          nologo: true,
-          safe: false,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const b64 = data?.data?.[0]?.b64_json;
-        if (b64) {
-          const img = await loadImageFromUrl('data:image/jpeg;base64,' + b64);
-          return img;
-        }
-      }
-    } catch { /* fallback GET */ }
-  } else if (refImage) {
-    urls.unshift(
-      `https://gen.pollinations.ai/image/${encodeURIComponent(fullPrompt)}?${baseParams}&image=${encodeURIComponent(refImage)}`
-    );
-  }
+  const refHint = refImage ? ' Same composition as reference image.' : '';
+  const fullPrompt = p + refHint + ', photorealistic, highly detailed';
+  const urls = buildPollinationsUrls(fullPrompt, model);
 
   const errors = [];
   for (const url of urls) {
     try {
-      return await withTimeout(loadImageFromUrl(url), 120000, 'timeout pollinations');
+      return await loadPollinationsImage(url);
     } catch (err) {
       errors.push(fmtErr(err));
     }
   }
-  throw new Error(errors.join(' | ') || 'Pollinations indisponível');
-}
-
-async function puterTxt2Img(prompt, refImage) {
-  initPuterToken();
-  const errors = [];
-  const refOpts = imageRefOpts(refImage);
-  const models = refImage
-    ? [{ model: 'flux-schnell', ...refOpts }, { model: 'flux-2-dev', ...refOpts }, ...IMG_MODELS.map(m => ({ model: m }))]
-    : IMG_MODELS.map(m => ({ model: m }));
-  for (const opts of models) {
-    try {
-      return await withTimeout(
-        puter.ai.txt2img(prompt, { disable_safety_checker: true, ...opts }),
-        120000,
-        'timeout'
-      );
-    } catch (err) {
-      if (isPuterBalanceError(err)) break;
-      errors.push((opts.model || 'img') + ': ' + fmtErr(err));
-    }
-  }
-  throw new Error(errors.join(' | ') || 'Puter indisponível');
+  throw new Error(errors.join(' | ') || 'Serviço gratuito indisponível');
 }
 
 async function generateImageAI(prompt, refImage) {
+  const attempts = [
+    () => pollinationsTxt2Img(prompt, refImage, 'flux'),
+    () => pollinationsTxt2Img(prompt, refImage, 'turbo'),
+    () => pollinationsTxt2Img(preparePollinationsPrompt(prompt) + ', cinematic lighting', refImage, 'flux'),
+  ];
   const errors = [];
-  try {
-    return await pollinationsTxt2Img(prompt, refImage);
-  } catch (err) {
-    errors.push('nuvem-grátis: ' + fmtErr(err));
+  for (const fn of attempts) {
+    try {
+      return await fn();
+    } catch (err) {
+      errors.push(fmtErr(err));
+    }
   }
-  try {
-    return await puterTxt2Img(prompt, refImage);
-  } catch (err) {
-    if (!isPuterBalanceError(err)) errors.push('puter: ' + fmtErr(err));
-  }
-  try {
-    return await pollinationsTxt2Img(prompt + ' highly detailed', refImage);
-  } catch (err) {
-    errors.push('retry: ' + fmtErr(err));
-  }
-  throw new Error(errors.join(' | ') || 'Falha na geração de imagem');
+  throw new Error('Não foi possível gerar agora (nuvem gratuita). Tente um prompt um pouco mais curto. ' + errors.slice(0, 2).join('; '));
 }
 
 const PDF_TRIGGERS = [
@@ -2532,10 +2528,25 @@ async function exportMsgAsPdf(btn) {
   setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 2200);
 }
 
+let balanceSweepTimer = null;
+function startBalanceSweep() {
+  if (balanceSweepTimer) clearInterval(balanceSweepTimer);
+  const sweep = () => {
+    document.querySelectorAll('body > div, body > dialog, [role="dialog"]').forEach(el => {
+      const t = (el.textContent || '').trim();
+      if (t.length < 800 && /low balance|insufficient credits|upgrade now|not enough funding/i.test(t)) el.remove();
+    });
+  };
+  balanceSweepTimer = setInterval(sweep, 400);
+  setTimeout(() => { clearInterval(balanceSweepTimer); balanceSweepTimer = null; }, 90000);
+}
+
 async function callImageAI(tid, prompt, opts = {}) {
   const isEdit = !!opts.isEdit;
   const fromUpload = !!opts.fromUpload;
   const refImg = getReferenceImage({ isEdit, fromUpload });
+  neuterPuterImageAPI();
+  startBalanceSweep();
   const result = await generateImageAI(prompt, refImg);
   removeThinking(tid);
   const wrap = appendImageMsg(prompt, result);
