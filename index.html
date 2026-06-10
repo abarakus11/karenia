@@ -1989,23 +1989,64 @@ function loadPollinationsImage(url, timeoutMs = 180000) {
   });
 }
 
-const HORDE_MODELS = ['Dreamshaper', 'Deliberate', 'AlbedoBase XL 3.1', 'stable_diffusion'];
+const HORDE_MAX_QUEUE = 25;
+const HORDE_MAX_WAIT_MS = 90000;
+
+function buildFastImagePrompt(prompt, refImage) {
+  const p = preparePollinationsPrompt(prompt) || 'arte digital criativa';
+  const refHint = refImage ? ', mesma composição da referência' : '';
+  return p + refHint + ', fotorealista, alta qualidade, detalhado';
+}
+
+async function urlTxt2Img(url, onProgress, timeoutMs = 90000) {
+  if (onProgress) onProgress('Gerando imagem…');
+  return await loadPollinationsImage(url, timeoutMs);
+}
+
+async function placeholdrTxt2Img(prompt, refImage, onProgress) {
+  const fullPrompt = buildFastImagePrompt(prompt, refImage);
+  const enc = encodeURIComponent(fullPrompt);
+  const seed = 1 + Math.floor(Math.random() * 3);
+  const url = `https://placeholdr.dev/768x768/${enc}?style=photographic&seed=${seed}`;
+  return await urlTxt2Img(url, onProgress);
+}
+
+async function imageGptTxt2Img(prompt, refImage, onProgress) {
+  const fullPrompt = buildFastImagePrompt(prompt, refImage);
+  const enc = encodeURIComponent(fullPrompt);
+  const url = `https://web.imagegpt.host/image?prompt=${enc}&route=realistic/fast&aspect_ratio=1:1`;
+  return await urlTxt2Img(url, onProgress);
+}
+
+async function pickFastHordeModels() {
+  try {
+    const res = await fetch('https://stablehorde.net/api/v2/status/models');
+    if (!res.ok) return ['Dreamshaper', 'Deliberate'];
+    const models = await res.json();
+    return models
+      .filter(m => m.count >= 3 && m.eta <= 20)
+      .sort((a, b) => (a.eta - b.eta) || (a.queued - b.queued))
+      .slice(0, 4)
+      .map(m => m.name)
+      .filter(Boolean);
+  } catch {
+    return ['Dreamshaper', 'Deliberate'];
+  }
+}
 
 async function stableHordeTxt2Img(prompt, refImage, onProgress) {
-  const p = preparePollinationsPrompt(prompt);
-  if (!p) throw new Error('Prompt vazio.');
-  const refHint = refImage ? ' Same composition as reference image.' : '';
-  const fullPrompt = p + refHint + ', highly detailed, photorealistic';
+  const fullPrompt = buildFastImagePrompt(prompt, refImage);
+  const models = await pickFastHordeModels();
   const errors = [];
 
-  for (const model of HORDE_MODELS) {
+  for (const model of models) {
     try {
       const submitRes = await fetch('https://stablehorde.net/api/v2/generate/async', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: '0000000000' },
         body: JSON.stringify({
           prompt: fullPrompt,
-          params: { width: 512, height: 512, steps: 20, cfg_scale: 7 },
+          params: { width: 512, height: 512, steps: 18, cfg_scale: 7 },
           models: [model],
           nsfw: true,
           censor_nsfw: false,
@@ -2016,17 +2057,21 @@ async function stableHordeTxt2Img(prompt, refImage, onProgress) {
       const { id } = await submitRes.json();
       if (!id) throw new Error('Horde sem ID de trabalho.');
 
-      const deadline = Date.now() + 300000;
+      const deadline = Date.now() + HORDE_MAX_WAIT_MS;
+      let checks = 0;
       while (Date.now() < deadline) {
-        await new Promise(r => setTimeout(r, 2500));
+        await new Promise(r => setTimeout(r, checks < 2 ? 1200 : 2000));
+        checks++;
         const checkRes = await fetch('https://stablehorde.net/api/v2/generate/check/' + id);
         if (!checkRes.ok) continue;
         const check = await checkRes.json();
-        if (onProgress) {
-          const q = check.queue_position;
-          onProgress(q > 0 ? `Fila gratuita (${q})…` : 'Gerando imagem…');
+        if (onProgress) onProgress('Gerando imagem…');
+        if (!check.done) {
+          if ((check.queue_position || 0) > HORDE_MAX_QUEUE) {
+            throw new Error('Fila Horde alta — pulando.');
+          }
+          continue;
         }
-        if (!check.done) continue;
         const statusRes = await fetch('https://stablehorde.net/api/v2/generate/status/' + id);
         if (!statusRes.ok) throw new Error('Horde status ' + statusRes.status);
         const status = await statusRes.json();
@@ -2037,7 +2082,7 @@ async function stableHordeTxt2Img(prompt, refImage, onProgress) {
           : 'data:image/webp;base64,' + src;
         return await loadPollinationsImage(dataUrl);
       }
-      throw new Error('Tempo esgotado na fila gratuita.');
+      throw new Error('Horde demorou demais.');
     } catch (err) {
       errors.push(model + ': ' + fmtErr(err));
     }
@@ -2076,9 +2121,10 @@ async function pollinationsTxt2Img(prompt, refImage, model = 'flux') {
 
 async function generateImageAI(prompt, refImage, onProgress) {
   const attempts = [
+    () => placeholdrTxt2Img(prompt, refImage, onProgress),
+    () => imageGptTxt2Img(prompt, refImage, onProgress),
     () => stableHordeTxt2Img(prompt, refImage, onProgress),
     () => pollinationsTxt2Img(prompt, refImage, 'turbo'),
-    () => pollinationsTxt2Img(prompt, refImage, 'flux'),
   ];
   const errors = [];
   for (const fn of attempts) {
@@ -2088,7 +2134,7 @@ async function generateImageAI(prompt, refImage, onProgress) {
       errors.push(fmtErr(err));
     }
   }
-  throw new Error('Não foi possível gerar agora (nuvem gratuita). Tente um prompt um pouco mais curto. ' + errors.slice(0, 2).join('; '));
+  throw new Error('Não foi possível gerar agora. Tente um prompt mais curto. ' + errors.slice(0, 2).join('; '));
 }
 
 const PDF_TRIGGERS = [
