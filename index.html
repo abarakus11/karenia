@@ -1677,6 +1677,20 @@ const PDF_TRIGGERS = [
 
 let html2pdfReady = null;
 let pdfJsReady = null;
+let pdfMakeReady = null;
+
+function toPdfUint8Array(arrayBuffer) {
+  if (arrayBuffer instanceof Uint8Array) return arrayBuffer;
+  if (arrayBuffer instanceof ArrayBuffer) return new Uint8Array(arrayBuffer.slice(0));
+  return new Uint8Array(arrayBuffer);
+}
+
+function countPdfPlainChars(text) {
+  return (text || '')
+    .replace(/---\s*Página\s+\d+\s*---/gi, '')
+    .replace(/\(vazia\)/gi, '')
+    .trim().length;
+}
 
 function loadPdfJs() {
   if (window.pdfjsLib) return Promise.resolve();
@@ -1694,9 +1708,123 @@ function loadPdfJs() {
   return pdfJsReady;
 }
 
+function loadPdfMake() {
+  if (window.pdfMake?.createPdf) return Promise.resolve();
+  if (pdfMakeReady) return pdfMakeReady;
+  pdfMakeReady = new Promise((resolve, reject) => {
+    const s1 = document.createElement('script');
+    s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js';
+    s1.onload = () => {
+      const s2 = document.createElement('script');
+      s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.js';
+      s2.onload = () => resolve();
+      s2.onerror = () => reject(new Error('Não foi possível carregar fontes do PDF.'));
+      document.head.appendChild(s2);
+    };
+    s1.onerror = () => reject(new Error('Não foi possível carregar o gerador de PDF.'));
+    document.head.appendChild(s1);
+  });
+  return pdfMakeReady;
+}
+
+function markdownToPdfMakeBlocks(md) {
+  const blocks = [];
+  for (const line of md.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith('## ')) blocks.push({ text: t.slice(3), style: 'h2' });
+    else if (t.startsWith('### ')) blocks.push({ text: t.slice(4), style: 'h3' });
+    else if (t.startsWith('- ')) blocks.push({ ul: [t.slice(2)], margin: [0, 2, 0, 6] });
+    else blocks.push({ text: t, margin: [0, 0, 0, 6] });
+  }
+  return blocks.length ? blocks : [{ text: md.trim() }];
+}
+
+async function renderTextPdfBlob(title, content) {
+  await loadPdfMake();
+  const body = (content || '').trim();
+  if (body.length < 20) throw new Error('Conteúdo insuficiente para gerar PDF.');
+
+  return new Promise((resolve, reject) => {
+    const docDef = {
+      pageSize: 'A4',
+      pageMargins: [48, 56, 48, 48],
+      footer: (page, pages) => ({
+        text: `KAREN AI · ${page}/${pages}`,
+        alignment: 'center',
+        fontSize: 8,
+        color: '#888888',
+        margin: [0, 8, 0, 0],
+      }),
+      content: [
+        { text: title, style: 'title' },
+        { text: `Gerado em ${new Date().toLocaleString('pt-BR')}`, style: 'meta', margin: [0, 0, 0, 14] },
+        ...markdownToPdfMakeBlocks(body),
+      ],
+      styles: {
+        title: { fontSize: 20, bold: true },
+        meta: { fontSize: 9, color: '#666666' },
+        h2: { fontSize: 14, bold: true, margin: [0, 12, 0, 6] },
+        h3: { fontSize: 12, bold: true, margin: [0, 8, 0, 4] },
+      },
+      defaultStyle: { fontSize: 11, lineHeight: 1.35 },
+    };
+    pdfMake.createPdf(docDef).getBlob((blob) => {
+      if (!blob || blob.size < 800) reject(new Error('PDF gerado vazio — conteúdo não coube no documento.'));
+      else resolve(blob);
+    });
+  });
+}
+
+async function renderPdfPagesAsImages(arrayBuffer) {
+  await loadPdfJs();
+  const pdf = await pdfjsLib.getDocument({ data: toPdfUint8Array(arrayBuffer) }).promise;
+  const images = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1.8 });
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    images.push(canvas.toDataURL('image/jpeg', 0.88));
+  }
+  return { images, pageCount: pdf.numPages };
+}
+
+async function renderImagesPdfBlob(title, images) {
+  await loadPdfMake();
+  const content = [
+    { text: title, style: 'title' },
+    { text: 'Cópia visual do PDF original (documento escaneado ou sem texto)', style: 'meta', margin: [0, 0, 0, 10] },
+  ];
+  const maxW = 515;
+  images.forEach((img, i) => {
+    if (i > 0) content.push({ text: '', pageBreak: 'before' });
+    content.push({ text: `Página ${i + 1}`, style: 'pg', margin: [0, 0, 0, 4] });
+    content.push({ image: img, width: maxW, margin: [0, 0, 0, 6] });
+  });
+  return new Promise((resolve, reject) => {
+    pdfMake.createPdf({
+      pageSize: 'A4',
+      pageMargins: [40, 44, 40, 44],
+      content,
+      styles: {
+        title: { fontSize: 16, bold: true },
+        meta: { fontSize: 9, color: '#666666' },
+        pg: { fontSize: 9, color: '#888888' },
+      },
+    }).getBlob((blob) => {
+      if (!blob || blob.size < 2000) reject(new Error('Falha ao montar PDF visual.'));
+      else resolve(blob);
+    });
+  });
+}
+
 async function extractPdfText(arrayBuffer) {
   await loadPdfJs();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pdf = await pdfjsLib.getDocument({ data: toPdfUint8Array(arrayBuffer) }).promise;
   const pages = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
@@ -2079,10 +2207,7 @@ async function renderPdfBlob(title, content) {
   if (body.length < 40) {
     throw new Error('Documento vazio — não foi possível montar o PDF com conteúdo legível.');
   }
-  const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;left:-12000px;top:0;width:794px;padding:0;background:#fff;color:#111;visibility:visible;opacity:1;';
-  el.innerHTML = buildPdfHtml(title, body);
-  return htmlToPdfBlob(el, slugifyFilename(title) + '.pdf');
+  return renderTextPdfBlob(title, body);
 }
 
 async function renderPdfFromHtmlAttachment(att, pdfReq) {
@@ -2177,9 +2302,18 @@ async function reorganizePdfAttachment(pdfAtt, pdfReq, tid) {
       pdfAtt.text = sourceText;
       pdfAtt.pageCount = pageCount;
     }
-    const plainLen = sourceText.replace(/---\s*Página\s+\d+\s*---/gi, '').trim().length;
+    const plainLen = countPdfPlainChars(sourceText);
+
     if (plainLen < 40) {
-      throw new Error('Este PDF não tem texto selecionável (pode ser scan/só imagem). Use um PDF com texto ou cole o conteúdo no chat.');
+      if (!pdfAtt.arrayBuffer) throw new Error('Não foi possível ler o PDF anexado.');
+      const { images } = await renderPdfPagesAsImages(pdfAtt.arrayBuffer);
+      const visTitle = (pdfAtt.name || 'documento').replace(/\.pdf$/i, '') + ' — cópia visual';
+      removeThinking(tidWork);
+      const blob = await renderImagesPdfBlob(visTitle, images);
+      const url = URL.createObjectURL(blob);
+      appendPdfMsg(visTitle, url, blob);
+      clearPendingAttachments();
+      return '📄 PDF gerado (visual): ' + visTitle;
     }
 
     const prompt = `Reorganize este documento PDF conforme o pedido do usuário.
@@ -2621,13 +2755,16 @@ async function addAttachment(file) {
   if (category === 'image') {
     att.dataUrl = await readFileAsDataURL(file);
   } else if (category === 'pdf') {
-    att.arrayBuffer = await file.arrayBuffer();
+    const raw = await file.arrayBuffer();
+    att.arrayBuffer = raw.slice(0);
     try {
       const extracted = await extractPdfText(att.arrayBuffer);
       att.text = extracted.text;
       att.pageCount = extracted.pageCount;
+      att.charCount = countPdfPlainChars(att.text);
     } catch (err) {
       att.text = '';
+      att.charCount = 0;
       att.extractError = fmtErr(err);
     }
   } else {
@@ -2680,13 +2817,15 @@ function appendUserAttachmentMsg(att) {
     } else if (att.category === 'pdf') {
       const snip = document.createElement('div');
       snip.className = 'user-attach-snippet';
-      if (att.text) {
+      if (att.extractError) {
+        snip.textContent = '⚠️ Erro ao ler PDF: ' + att.extractError;
+      } else if (att.charCount > 40) {
         const preview = att.text.replace(/---\s*Página\s+\d+\s*---/gi, '').trim();
-        snip.textContent = (att.pageCount ? `${att.pageCount} pág. · ` : '') + preview.slice(0, 240) + (preview.length > 240 ? '…' : '');
+        snip.textContent = `✅ ${att.pageCount} pág. · ${att.charCount} caracteres lidos\n` + preview.slice(0, 200) + (preview.length > 200 ? '…' : '');
+      } else if (att.pageCount > 0) {
+        snip.textContent = `📷 ${att.pageCount} pág. · PDF escaneado (sem texto) — será copiado visualmente`;
       } else {
-        snip.textContent = att.extractError
-          ? 'PDF sem texto legível (pode ser scan).'
-          : 'PDF anexado — lendo conteúdo…';
+        snip.textContent = '⚠️ PDF vazio ou não legível.';
       }
       bub.appendChild(snip);
     }
@@ -2737,7 +2876,16 @@ async function handleAttachmentBatch(files) {
     history.push({ role: 'user', content: '📎 Anexos: ' + getAttachmentSummary() });
     trimHistory();
     totalMsgs++;
-    appendMsg('assistant', attachmentHintMessage());
+    let hint = attachmentHintMessage();
+    const pdfAtt = getPdfAttachment();
+    if (pdfAtt?.extractError) {
+      hint += '\n\n⚠️ **Erro ao ler PDF:** ' + pdfAtt.extractError;
+    } else if (pdfAtt?.charCount > 40) {
+      hint += `\n\n✅ **PDF lido:** ${pdfAtt.pageCount} páginas, ${pdfAtt.charCount} caracteres extraídos.`;
+    } else if (pdfAtt?.pageCount > 0) {
+      hint += `\n\n📷 **PDF escaneado:** ${pdfAtt.pageCount} páginas sem texto — vou preservar visualmente.`;
+    }
+    appendMsg('assistant', hint);
   }
 }
 
