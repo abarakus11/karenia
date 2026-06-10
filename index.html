@@ -1779,6 +1779,7 @@ function appendPdfMsg(title, blobUrl, blob) {
   cap.textContent = '📄 ' + title;
   const card = document.createElement('div');
   card.className = 'pdf-card';
+  card.dataset.ts = String(Date.now());
   card.innerHTML = `
     <div class="pdf-icon">📄</div>
     <div class="pdf-info">
