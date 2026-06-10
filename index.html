@@ -1699,9 +1699,69 @@ function loadPollinationsImage(url, timeoutMs = 180000) {
       else finish(false);
     };
     img.onerror = () => finish(false);
-    const sep = url.includes('?') ? '&' : '?';
-    img.src = url + sep + '_k=' + Date.now();
+    if (url.startsWith('data:')) {
+      img.src = url;
+    } else {
+      const sep = url.includes('?') ? '&' : '?';
+      img.src = url + sep + '_k=' + Date.now();
+    }
   });
+}
+
+const HORDE_MODELS = ['Dreamshaper', 'Deliberate', 'AlbedoBase XL 3.1', 'stable_diffusion'];
+
+async function stableHordeTxt2Img(prompt, refImage, onProgress) {
+  const p = preparePollinationsPrompt(prompt);
+  if (!p) throw new Error('Prompt vazio.');
+  const refHint = refImage ? ' Same composition as reference image.' : '';
+  const fullPrompt = p + refHint + ', highly detailed, photorealistic';
+  const errors = [];
+
+  for (const model of HORDE_MODELS) {
+    try {
+      const submitRes = await fetch('https://stablehorde.net/api/v2/generate/async', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: '0000000000' },
+        body: JSON.stringify({
+          prompt: fullPrompt,
+          params: { width: 512, height: 512, steps: 20, cfg_scale: 7 },
+          models: [model],
+          nsfw: true,
+          censor_nsfw: false,
+          r2: true,
+        }),
+      });
+      if (!submitRes.ok) throw new Error('Horde HTTP ' + submitRes.status);
+      const { id } = await submitRes.json();
+      if (!id) throw new Error('Horde sem ID de trabalho.');
+
+      const deadline = Date.now() + 300000;
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 2500));
+        const checkRes = await fetch('https://stablehorde.net/api/v2/generate/check/' + id);
+        if (!checkRes.ok) continue;
+        const check = await checkRes.json();
+        if (onProgress) {
+          const q = check.queue_position;
+          onProgress(q > 0 ? `Fila gratuita (${q})…` : 'Gerando imagem…');
+        }
+        if (!check.done) continue;
+        const statusRes = await fetch('https://stablehorde.net/api/v2/generate/status/' + id);
+        if (!statusRes.ok) throw new Error('Horde status ' + statusRes.status);
+        const status = await statusRes.json();
+        const src = status.generations?.[0]?.img;
+        if (!src) throw new Error('Horde retornou vazio.');
+        const dataUrl = src.startsWith('http') || src.startsWith('data:')
+          ? src
+          : 'data:image/webp;base64,' + src;
+        return await loadPollinationsImage(dataUrl);
+      }
+      throw new Error('Tempo esgotado na fila gratuita.');
+    } catch (err) {
+      errors.push(model + ': ' + fmtErr(err));
+    }
+  }
+  throw new Error(errors.join(' | ') || 'Stable Horde indisponível');
 }
 
 function buildPollinationsUrls(prompt, model = 'flux') {
@@ -1733,11 +1793,11 @@ async function pollinationsTxt2Img(prompt, refImage, model = 'flux') {
   throw new Error(errors.join(' | ') || 'Serviço gratuito indisponível');
 }
 
-async function generateImageAI(prompt, refImage) {
+async function generateImageAI(prompt, refImage, onProgress) {
   const attempts = [
-    () => pollinationsTxt2Img(prompt, refImage, 'flux'),
+    () => stableHordeTxt2Img(prompt, refImage, onProgress),
     () => pollinationsTxt2Img(prompt, refImage, 'turbo'),
-    () => pollinationsTxt2Img(preparePollinationsPrompt(prompt) + ', cinematic lighting', refImage, 'flux'),
+    () => pollinationsTxt2Img(prompt, refImage, 'flux'),
   ];
   const errors = [];
   for (const fn of attempts) {
@@ -2547,7 +2607,7 @@ async function callImageAI(tid, prompt, opts = {}) {
   const refImg = getReferenceImage({ isEdit, fromUpload });
   neuterPuterImageAPI();
   startBalanceSweep();
-  const result = await generateImageAI(prompt, refImg);
+  const result = await generateImageAI(prompt, refImg, (label) => updateThinkingLabel(tid, label));
   removeThinking(tid);
   const wrap = appendImageMsg(prompt, result);
   const img = wrap?.querySelector('img');
@@ -3123,6 +3183,10 @@ function addThinking(label = 'Pensando...') {
   return id;
 }
 function removeThinking(id) { const el = document.getElementById(id); if (el) el.remove(); }
+function updateThinkingLabel(id, label) {
+  const span = document.getElementById(id)?.querySelector('.bubble > span');
+  if (span) span.textContent = label;
+}
 function scroll(containerId = 'msgs') {
   const m = document.getElementById(containerId);
   if (m) m.scrollTop = m.scrollHeight;
