@@ -1210,8 +1210,10 @@ async function sendMsg(txt) {
   const ws = document.getElementById('welcome');
   if (ws) ws.remove();
 
-  appendMsg('user', msg);
-  history.push({ role: 'user', content: msg });
+  const attachSummary = hasAttachedFiles() ? getAttachmentSummary() : '';
+  appendMsg('user', attachSummary ? msg + '\n\n📎 ' + attachSummary : msg);
+  if (hasAttachedFiles()) hideAttachPreview();
+  history.push({ role: 'user', content: attachSummary ? msg + ' [anexos: ' + attachSummary + ']' : msg });
   trimHistory();
   totalMsgs++;
 
@@ -1277,7 +1279,20 @@ async function sendMsg(txt) {
     }
 
     if (!reply?.trim()) {
-      if (isLikelyVisualCreation(msg) || detectUploadBasedImageRequest(msg)) {
+      if (detectPdfRequest(msg) || (hasAttachedFiles() && getHtmlAttachment() && /pdf|renderiz/i.test(msg))) {
+        try {
+          const tidPdf = addThinking('Renderizando HTML em PDF…');
+          reply = await callPdfAI(tidPdf, detectPdfRequest(msg) || {
+            topic: msg,
+            fromAttachments: true,
+            useHtmlTemplate: true,
+            directHtml: true,
+          });
+        } catch (pdfErr) {
+          renderAttachPreview();
+          throw pdfErr;
+        }
+      } else if (isLikelyVisualCreation(msg) || detectUploadBasedImageRequest(msg)) {
         try {
           reply = await retryAsImage(msg);
         } catch (imgErr) {
@@ -1303,6 +1318,7 @@ async function sendMsg(txt) {
     }
   } catch (err) {
     removeThinking(tid);
+    if (hasAttachedFiles()) renderAttachPreview();
     appendMsg('assistant', '⚠️ Erro: ' + fmtErr(err));
   } finally {
     busy = false;
@@ -1685,8 +1701,13 @@ function getLastAssistantText(containerId = 'msgs') {
   return null;
 }
 
+function wantsHtmlAdaptation(msg) {
+  return /(?:adapta|altere|mude|modifi|substitu|preencha com|atualize (?:o|os)|troque|insira (?:os|meus) dados|com dados (?:da|do|de) (?:empresa|cliente|projeto))/i.test(msg || '');
+}
+
 function wantsDirectHtmlPdf(msg) {
-  return /html\s*(?:para|em|→|->)?\s*pdf|pdf\s*(?:do|de|desse|deste)\s*html|converta?\s+(?:esse|este|o)\s*html|usar?\s+(?:esse|este)\s*html\s*(?:como|direto)/i.test(msg || '');
+  if (wantsHtmlAdaptation(msg)) return false;
+  return /desse html|deste html|do html|dados do html|html (?:em|para|→|->) pdf|pdf.*html|renderiz|p[aá]gina|n[aã]o quero c[oó]digo|visual|imprim|converta|modelo|layout|anexo|arquivo/i.test(msg || '');
 }
 
 function detectPdfRequest(msg) {
@@ -1720,13 +1741,14 @@ function detectPdfRequest(msg) {
     const req = { topic, fromAttachments: hasAtt };
     if (htmlAtt) {
       req.useHtmlTemplate = true;
-      req.directHtml = wantsDirectHtmlPdf(t) || /modelo|layout|template|anexo|arquivo/i.test(t);
+      req.directHtml = true;
+      req.adaptHtml = wantsHtmlAdaptation(t);
     }
     return req;
   }
 
-  if (hasAtt && htmlAtt && wantsDirectHtmlPdf(t)) {
-    return { topic: t, fromAttachments: true, useHtmlTemplate: true, directHtml: true };
+  if (hasAtt && htmlAtt) {
+    return { topic: t, fromAttachments: true, useHtmlTemplate: true, directHtml: true, adaptHtml: wantsHtmlAdaptation(t) };
   }
 
   return null;
@@ -1817,6 +1839,69 @@ function extractHtmlBody(html) {
   return noDoc.trim() || html;
 }
 
+function extractHtmlStyles(html) {
+  const styles = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map(m => m[1]).join('\n');
+  const links = [...html.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi)].map(m => m[0]).join('\n');
+  return { styles, links };
+}
+
+function normalizeFullHtml(html) {
+  const trimmed = (html || '').trim();
+  if (!trimmed) return '';
+  if (/<html[\s>]/i.test(trimmed)) return trimmed;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${trimmed}</body></html>`;
+}
+
+async function renderFullHtmlToPdf(html, title) {
+  await loadHtml2Pdf();
+  const fullHtml = normalizeFullHtml(html);
+  if (!fullHtml) throw new Error('HTML vazio ou inválido.');
+
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;height:1123px;border:0;opacity:0;pointer-events:none;';
+  document.body.appendChild(iframe);
+
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Tempo esgotado ao renderizar o HTML.')), 50000);
+      iframe.onload = () => {
+        clearTimeout(timer);
+        setTimeout(resolve, 1800);
+      };
+      iframe.srcdoc = fullHtml;
+    });
+
+    const doc = iframe.contentDocument;
+    const target = doc?.documentElement || doc?.body;
+    if (!target?.innerHTML?.trim()) throw new Error('Não foi possível renderizar o conteúdo do HTML.');
+
+    return await html2pdf().set({
+      margin: [4, 4, 4, 4],
+      filename: slugifyFilename(title) + '.pdf',
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        width: 794,
+        windowWidth: 794,
+      },
+      jsPDF: { unit: 'px', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'] },
+    }).from(target).outputPdf('blob');
+  } catch (iframeErr) {
+    const { styles, links } = extractHtmlStyles(html);
+    const body = extractHtmlBody(html);
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;padding:0;background:#fff;';
+    el.innerHTML = `${links}<style>${styles}</style><div>${body}</div>`;
+    return htmlToPdfBlob(el, slugifyFilename(title) + '.pdf');
+  } finally {
+    iframe.remove();
+  }
+}
+
 function extractHtmlTitle(html, fallback) {
   const m = html.match(/<title[^>]*>([^<]+)<\/title>/i);
   return m?.[1]?.trim() || fallback;
@@ -1833,15 +1918,13 @@ async function renderPdfFromHtmlAttachment(att, pdfReq) {
   let html = att.text || '';
   let title = extractHtmlTitle(html, att.name.replace(/\.[^.]+$/, ''));
 
-  if (pdfReq.topic && !pdfReq.directHtml && pdfReq.topic.length > 10) {
-    const prompt = `Você recebeu um HTML modelo. Adapte-o conforme o pedido do usuário e retorne APENAS HTML completo válido (com <html><body>).
+  if (pdfReq.adaptHtml && pdfReq.topic) {
+    const prompt = `Adapte este HTML conforme o pedido e retorne APENAS HTML completo válido.
 
 Pedido: ${pdfReq.topic}
 
-HTML modelo:
-${html.slice(0, 30000)}
-
-Regras: mantenha estrutura e estilo quando possível; aplique as mudanças pedidas; retorne só HTML.`;
+HTML:
+${html.slice(0, 30000)}`;
     const adapted = await withTimeout(
       puterChatRequest([{ role: 'user', content: prompt }], chatOpts({
         max_tokens: Math.max(getKarenModeConfig().max_tokens, 3000),
@@ -1856,10 +1939,8 @@ Regras: mantenha estrutura e estilo quando possível; aplique as mudanças pedid
     title = extractHtmlTitle(html, title);
   }
 
-  const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;left:-9999px;top:0;width:190mm;padding:0;background:#fff;';
-  el.innerHTML = extractHtmlBody(html);
-  return { blob: await htmlToPdfBlob(el, slugifyFilename(title) + '.pdf'), title };
+  const blob = await renderFullHtmlToPdf(html, title);
+  return { blob, title };
 }
 
 function downloadPdfBlob(url, filename) {
@@ -1916,22 +1997,20 @@ async function callPdfAI(tid, pdfReq) {
   let title, content;
   const htmlAtt = getHtmlAttachment();
 
-  if (htmlAtt && (pdfReq.directHtml || (pdfReq.useHtmlTemplate && wantsDirectHtmlPdf(pdfReq.topic)))) {
+  if (htmlAtt && pdfReq.useHtmlTemplate) {
     removeThinking(tid);
-    const { blob, title: htmlTitle } = await renderPdfFromHtmlAttachment(htmlAtt, { ...pdfReq, directHtml: true });
-    const url = URL.createObjectURL(blob);
-    appendPdfMsg(htmlTitle, url, blob);
-    clearPendingAttachments();
-    return '📄 PDF gerado: ' + htmlTitle;
-  }
-
-  if (htmlAtt && pdfReq.useHtmlTemplate && pdfReq.fromAttachments) {
-    removeThinking(tid);
-    const { blob, title: htmlTitle } = await renderPdfFromHtmlAttachment(htmlAtt, pdfReq);
-    const url = URL.createObjectURL(blob);
-    appendPdfMsg(htmlTitle, url, blob);
-    clearPendingAttachments();
-    return '📄 PDF gerado: ' + htmlTitle;
+    const tidHtml = addThinking('Renderizando página em PDF…');
+    try {
+      const { blob, title: htmlTitle } = await renderPdfFromHtmlAttachment(htmlAtt, pdfReq);
+      removeThinking(tidHtml);
+      const url = URL.createObjectURL(blob);
+      appendPdfMsg(htmlTitle, url, blob);
+      clearPendingAttachments();
+      return '📄 PDF gerado: ' + htmlTitle;
+    } catch (err) {
+      removeThinking(tidHtml);
+      throw err;
+    }
   }
 
   if (pdfReq.fromLast && pdfReq.content) {
@@ -2237,6 +2316,10 @@ function classifyFile(file) {
   if (mime === 'application/pdf' || /\.pdf$/i.test(name)) return 'pdf';
   if (mime.startsWith('text/') || /\.(txt|md|csv|json|xml|log)$/i.test(name)) return 'text';
   return 'text';
+}
+
+function hideAttachPreview() {
+  document.getElementById('attach-preview')?.classList.remove('show');
 }
 
 function renderAttachPreview() {
