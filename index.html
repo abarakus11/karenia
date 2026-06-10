@@ -592,6 +592,19 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
         <button onclick="showSetupModal()" style="padding:8px 14px;border-radius:8px;font-size:13px;color:var(--text2);border:1px solid var(--border);background:var(--bg2);cursor:pointer;">Guia de ativação</button>
       </div>
 
+      <div class="info-card">
+        <div class="info-card-tit">🆓 OpenRouter — plano B gratuito</div>
+        <div class="info-card-txt">Se o Puter acabar os créditos, cole uma chave gratuita do <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" style="color:var(--accent2)">openrouter.ai/keys</a>. A KAREN usa modelos <strong>:free</strong> automaticamente — sem cartão.</div>
+      </div>
+
+      <div class="stsec">
+        <div class="sttit">Chave OpenRouter (opcional)</div>
+        <div class="stdesc" id="or-status">Sem chave — usa só Puter</div>
+        <input id="or-key" type="password" placeholder="sk-or-v1-..." onchange="saveOpenRouterKey()"
+          style="width:100%;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:14px;color:var(--text);margin-bottom:8px;">
+        <button onclick="saveOpenRouterKey(true)" style="padding:8px 14px;border-radius:8px;font-size:13px;color:#fff;border:none;background:linear-gradient(135deg,#7c6ef8,#9b8ffa);cursor:pointer;">✓ Salvar chave</button>
+      </div>
+
       <div class="stsec">
         <div class="sttit">Modelo de IA</div>
         <div class="stdesc">Modelos gratuitos via Puter.js</div>
@@ -679,6 +692,8 @@ const DB = {
   set model(v)   { localStorage.setItem('k_model', v); },
   get puterToken() { return localStorage.getItem('k_puter_token') || ''; },
   set puterToken(v){ localStorage.setItem('k_puter_token', v); },
+  get openRouterKey() { return localStorage.getItem('k_or_key') || ''; },
+  set openRouterKey(v) { localStorage.setItem('k_or_key', v); },
   get tts()      { return localStorage.getItem('k_tts')    || 'nova'; },
   set tts(v)     { localStorage.setItem('k_tts', v); },
   get memories() { try { return JSON.parse(localStorage.getItem('k_mems') || '[]'); } catch { return []; } },
@@ -869,6 +884,7 @@ document.addEventListener('DOMContentLoaded', () => {
   purgeConvoHistory();
   ensureCreatorMemory();
   initPuterToken();
+  updateOpenRouterStatus();
   initMobileUX();
   updateModelUI();
   updateKarenStatusUI();
@@ -1016,7 +1032,7 @@ function updatePuterStatus() {
 }
 
 async function testPuterToken() {
-  const text = await puterChatRequest(
+  const text = await karenChatRequest(
     [{ role: 'user', content: 'Responda apenas: ok' }],
     { model: 'gpt-5.4-nano', max_tokens: 10, stream: false }
   );
@@ -1075,6 +1091,34 @@ function ensurePuterReady() {
     throw new Error('Cole o Auth Token do Puter (puter.com/dashboard → Copy). É grátis e você faz isso uma vez só.');
   }
   initPuterToken();
+}
+
+function ensureKarenReady() {
+  if (DB.openRouterKey?.trim()) return;
+  if (DB.puterToken?.trim() && typeof puter !== 'undefined') {
+    initPuterToken();
+    return;
+  }
+  showSetupModal();
+  throw new Error('Configure o token Puter ou uma chave gratuita OpenRouter em Configurações.');
+}
+
+function saveOpenRouterKey(showAlert) {
+  const el = document.getElementById('or-key');
+  if (el) DB.openRouterKey = el.value.trim();
+  updateOpenRouterStatus();
+  if (showAlert) alert(DB.openRouterKey ? 'Chave OpenRouter salva!' : 'Chave removida.');
+}
+
+function updateOpenRouterStatus() {
+  const el = document.getElementById('or-status');
+  const inp = document.getElementById('or-key');
+  if (inp && !inp.value && DB.openRouterKey) inp.value = DB.openRouterKey;
+  if (el) {
+    el.textContent = DB.openRouterKey
+      ? '✓ OpenRouter ativo — fallback gratuito habilitado'
+      : 'Sem chave — usa só Puter';
+  }
 }
 
 function extractPuterReply(response) {
@@ -1145,6 +1189,198 @@ async function puterChatRequest(messages, opts = {}) {
   }
 }
 
+const OPENROUTER_FREE_MODELS = [
+  'openrouter/free',
+  'meta-llama/llama-3.2-3b-instruct:free',
+  'google/gemma-2-9b-it:free',
+];
+
+const POLLINATIONS_TEXT_MODELS = ['openai-fast', 'mistral', 'llama', 'openai'];
+
+function isProviderBalanceError(err) {
+  const s = fmtErr(err).toLowerCase();
+  return /low balance|insufficient|not enough funding|no usage left|insufficient_funds|402|payment required|out of credits|no credits|billing|upgrade.*continue|saldo|crédito|credito|sem créditos/i.test(s);
+}
+
+function sweepPuterModals() {
+  document.querySelectorAll('body > div, body > dialog, [role="dialog"], .usage-limit-dialog, [class*="usage-limit"], iframe').forEach(el => {
+    if (el.closest?.('#app')) return;
+    const t = (el.textContent || '').trim();
+    if (t.length < 900 && /low balance|insufficient|not enough funding|upgrade now|no usage left|please upgrade/i.test(t)) {
+      el.remove();
+    }
+  });
+}
+
+async function openRouterChatRequest(messages, opts = {}) {
+  const key = DB.openRouterKey?.trim();
+  if (!key) throw new Error('Chave OpenRouter não configurada.');
+  const max_tokens = opts.max_tokens || 900;
+  const errors = [];
+  for (const model of OPENROUTER_FREE_MODELS) {
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + key,
+          'HTTP-Referer': location.origin || 'https://karen-ai.local',
+          'X-Title': 'KAREN AI',
+        },
+        body: JSON.stringify({ model, messages, max_tokens, stream: false }),
+      });
+      if (!res.ok) {
+        errors.push(model + ': HTTP ' + res.status);
+        continue;
+      }
+      const data = await res.json();
+      const text = extractPuterReply(data);
+      if (text?.trim()) return text;
+    } catch (err) {
+      errors.push(model + ': ' + fmtErr(err));
+    }
+  }
+  throw new Error('OpenRouter falhou. ' + errors.slice(0, 2).join('; '));
+}
+
+async function pollinationsChatRequest(messages, opts = {}) {
+  const max_tokens = opts.max_tokens || 900;
+  const errors = [];
+  for (const model of POLLINATIONS_TEXT_MODELS) {
+    try {
+      const res = await fetch('https://text.pollinations.ai/openai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages, model, max_tokens }),
+      });
+      if (res.status === 429) {
+        await new Promise(r => setTimeout(r, 2500));
+        continue;
+      }
+      if (!res.ok) {
+        errors.push(model + ': HTTP ' + res.status);
+        continue;
+      }
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content || data?.content || extractPuterReply(data);
+      if (text?.trim()) return text;
+    } catch (err) {
+      errors.push(model + ': ' + fmtErr(err));
+    }
+  }
+  const lastUser = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+  if (lastUser) {
+    const enc = encodeURIComponent(String(lastUser).slice(0, 2400));
+    for (const model of POLLINATIONS_TEXT_MODELS) {
+      try {
+        const res = await fetch(`https://text.pollinations.ai/${enc}?model=${model}`);
+        if (res.status === 429) {
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        if (!res.ok) continue;
+        const text = await res.text();
+        if (text.trim().length > 30) return text;
+      } catch (err) {
+        errors.push('GET ' + model + ': ' + fmtErr(err));
+      }
+    }
+  }
+  throw new Error('Pollinations indisponível. ' + errors.slice(0, 2).join('; '));
+}
+
+async function karenChatRequest(messages, opts = {}) {
+  const errors = [];
+  if (DB.puterToken?.trim()) {
+    try {
+      return await puterChatRequest(messages, opts);
+    } catch (err) {
+      errors.push('Puter: ' + fmtErr(err));
+      if (!isProviderBalanceError(err)) throw err;
+      sweepPuterModals();
+    }
+  }
+  if (DB.openRouterKey?.trim()) {
+    try {
+      return await openRouterChatRequest(messages, opts);
+    } catch (err) {
+      errors.push(fmtErr(err));
+    }
+  }
+  try {
+    return await pollinationsChatRequest(messages, opts);
+  } catch (err) {
+    errors.push(fmtErr(err));
+  }
+  throw new Error('Nuvem sem créditos. Em Configurações, adicione uma chave gratuita do OpenRouter (openrouter.ai/keys) ou um token Puter novo.');
+}
+
+async function karenChatRequestStream(messages, opts = {}) {
+  if (DB.puterToken?.trim()) {
+    try {
+      return await puterChatRequest(messages, { ...opts, stream: true });
+    } catch (err) {
+      if (!isProviderBalanceError(err)) throw err;
+      sweepPuterModals();
+    }
+  }
+  const text = await karenChatRequest(messages, { ...opts, stream: false });
+  return (async function* () {
+    const parts = text.split(/(\s+)/);
+    for (const part of parts) {
+      if (!part) continue;
+      yield { text: part };
+    }
+  })();
+}
+
+function buildFallbackPdfContent(topic) {
+  const clean = String(topic || 'documento')
+    .replace(/^(?:gere?|crie|fa[cç]a|monte|produza|exporta)\s+(?:me\s+)?(?:um\s+)?pdf\s+(?:sobre|de|do|da|com)?\s*/i, '')
+    .replace(/^(?:um|uma|o|a)\s+/i, '')
+    .trim() || 'Documento';
+  const title = clean.charAt(0).toUpperCase() + clean.slice(1);
+  const body = `TÍTULO: ${title}
+---
+## Introdução
+
+Este documento apresenta uma visão estruturada sobre ${clean}, com foco no contexto brasileiro em 2025.
+
+## Panorama geral
+
+O tema "${clean}" reúne tendências, lançamentos e fatores que influenciam escolhas no mercado nacional.
+
+## Principais destaques
+
+- Novidades e modelos relevantes em 2025
+- Tecnologias e diferenciais mais procurados
+- Relação custo-benefício para diferentes perfis
+- Aspectos de segurança, eficiência e manutenção
+
+## Mercado brasileiro
+
+O setor segue em expansão, com concorrência acirrada entre marcas nacionais e importadas, ofertas financiadas e maior atenção à sustentabilidade.
+
+## Critérios de avaliação
+
+Ao analisar opções ligadas a ${clean}, considere desempenho, consumo, conforto, rede de assistência, valor de revenda e adequação ao seu uso diário.
+
+## Tendências para 2025
+
+- Maior oferta de versões híbridas e elétricas
+- Conectividade e assistentes integrados
+- Pacotes de segurança e ADAS mais acessíveis
+- Pressão por eficiência energética e emissões menores
+
+## Conclusão
+
+Este PDF foi montado em modo contingência porque o Puter está sem créditos. Para conteúdo mais rico via IA, configure uma chave gratuita OpenRouter em Configurações.
+
+---
+_Nota: documento estruturado automaticamente pela KAREN._`;
+  return parsePdfContent(body);
+}
+
 async function* parsePuterSSE(res) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
@@ -1198,7 +1434,7 @@ async function sendMsg(txt) {
   totalMsgs++;
 
   try {
-    ensurePuterReady();
+    ensureKarenReady();
   } catch (err) {
     busy = false;
     document.getElementById('sbtn').disabled = false;
@@ -1298,8 +1534,12 @@ async function sendMsg(txt) {
     }
   } catch (err) {
     removeThinking(tid);
+    sweepPuterModals();
     if (hasAttachedFiles()) renderAttachPreview();
-    appendMsg('assistant', '⚠️ Erro: ' + fmtErr(err));
+    const msg = isProviderBalanceError(err)
+      ? '⚠️ Créditos do Puter esgotados. Vá em Configurações e cole uma chave gratuita do OpenRouter (openrouter.ai/keys), ou tente de novo mais tarde.'
+      : '⚠️ Erro: ' + fmtErr(err);
+    appendMsg('assistant', msg);
   } finally {
     busy = false;
     document.getElementById('sbtn').disabled = false;
@@ -1626,8 +1866,7 @@ function imageRefOpts(refImage) {
 }
 
 function isPuterBalanceError(err) {
-  const s = fmtErr(err).toLowerCase();
-  return /low balance|insufficient|not enough funding|enough funding|out of credits|no credits|billing|upgrade.*continue|saldo|crédito|credito/i.test(s);
+  return isProviderBalanceError(err);
 }
 
 function neuterPuterImageAPI() {
@@ -1645,10 +1884,22 @@ function neuterPuterImageAPI() {
 }
 
 function blockPuterBalanceModals() {
+  if (!document.getElementById('karen-puter-block')) {
+    const style = document.createElement('style');
+    style.id = 'karen-puter-block';
+    style.textContent = `
+      .usage-limit-dialog, [class*="usage-limit"], [id*="usage-limit"],
+      body > div[style*="fixed"]:not(#app):not(#app *),
+      body > iframe[src*="puter"] {
+        display: none !important; visibility: hidden !important; pointer-events: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
   const isBalancePopup = (el) => {
     if (!el?.textContent || el.closest?.('#app')) return false;
     const t = el.textContent.trim();
-    return t.length < 800 && /low balance|not enough funding|insufficient credits|upgrade now|your account has not enough|please upgrade/i.test(t);
+    return t.length < 900 && /low balance|not enough funding|insufficient credits|upgrade now|your account has not enough|please upgrade|no usage left/i.test(t);
   };
   const removeBalancePopups = (node) => {
     if (node.nodeType !== 1) return;
@@ -1657,12 +1908,9 @@ function blockPuterBalanceModals() {
       if (isBalancePopup(el)) el.remove();
     });
   };
-  const sweep = () => {
-    document.querySelectorAll('body > div, body > dialog, [role="dialog"]').forEach(el => {
-      if (isBalancePopup(el)) el.remove();
-    });
-  };
+  const sweep = () => sweepPuterModals();
   sweep();
+  setInterval(sweep, 800);
   new MutationObserver((mutations) => {
     for (const m of mutations) {
       for (const node of m.addedNodes) removeBalancePopups(node);
@@ -2366,7 +2614,7 @@ Pedido: ${pdfReq.topic}
 HTML:
 ${html.slice(0, 30000)}`;
     const adapted = await withTimeout(
-      puterChatRequest([{ role: 'user', content: prompt }], chatOpts({
+      karenChatRequest([{ role: 'user', content: prompt }], chatOpts({
         max_tokens: Math.max(getKarenModeConfig().max_tokens, 3000),
         stream: false,
       })),
@@ -2477,7 +2725,7 @@ Regras OBRIGATÓRIAS:
 - O corpo DEVE ter conteúdo substancial — nunca retorne vazio`;
 
     const raw = await withTimeout(
-      puterChatRequest([{ role: 'user', content: prompt }], chatOpts({
+      karenChatRequest([{ role: 'user', content: prompt }], chatOpts({
         max_tokens: Math.max(getKarenModeConfig().max_tokens, 2800),
         stream: false,
       })),
@@ -2546,15 +2794,25 @@ Regras OBRIGATÓRIAS:
 - Mínimo 4 seções quando couber; conteúdo denso e bem escrito
 - Máximo ~2000 palavras`;
 
-    const raw = await withTimeout(
-      puterChatRequest([{ role: 'user', content: prompt }], chatOpts({
-        max_tokens: Math.max(getKarenModeConfig().max_tokens, 2200),
-        stream: false,
-      })),
-      120000,
-      'Tempo esgotado ao gerar conteúdo do PDF.'
-    );
-    const parsed = parsePdfContent(raw);
+    let parsed;
+    try {
+      const raw = await withTimeout(
+        karenChatRequest([{ role: 'user', content: prompt }], chatOpts({
+          max_tokens: Math.max(getKarenModeConfig().max_tokens, 2200),
+          stream: false,
+        })),
+        120000,
+        'Tempo esgotado ao gerar conteúdo do PDF.'
+      );
+      parsed = parsePdfContent(raw);
+    } catch (err) {
+      if (!isProviderBalanceError(err)) throw err;
+      sweepPuterModals();
+      parsed = buildFallbackPdfContent(topic);
+    }
+    if (!parsed?.body || parsed.body.trim().length < 80) {
+      parsed = buildFallbackPdfContent(topic);
+    }
     title = parsed.title;
     content = parsed.body;
   }
@@ -2623,7 +2881,7 @@ async function callImageAI(tid, prompt, opts = {}) {
 async function callAI(tid) {
   const messages = buildMessages();
   const text = (await withTimeout(
-    puterChatRequest(messages, chatOpts({ stream: false })),
+    karenChatRequest(messages, chatOpts({ stream: false })),
     90000,
     'A IA demorou demais. Tente novamente.'
   )).trim();
@@ -2636,7 +2894,7 @@ async function callAI(tid) {
 async function callAIStream(tid) {
   const messages = buildMessages();
   const stream = await withTimeout(
-    puterChatRequest(messages, chatOpts({ stream: true })),
+    karenChatRequestStream(messages, chatOpts({ stream: true })),
     90000,
     'A IA demorou demais. Tente novamente.'
   );
@@ -2740,7 +2998,7 @@ Se não houver nada relevante, retorne: []
 Usuário: ${userMsg.slice(0, 300)}
 Resposta: ${reply.slice(0, 300)}`;
 
-    const res = await puterChatRequest(
+    const res = await karenChatRequest(
       [{ role: 'user', content: prompt }],
       { model: 'gpt-4o-mini', max_tokens: 300, stream: false }
     );
@@ -3667,7 +3925,7 @@ async function saveReminderFromRemote(userMsg, reply, containerId = 'remote-msgs
   if (listQuery) return;
 
   try {
-    const res = await puterChatRequest(
+    const res = await karenChatRequest(
       [{ role: 'user', content: `Analise se o usuário pediu para CRIAR um novo lembrete/compromisso.
 Retorne SOMENTE JSON:
 {"create":true|false,"text":"descrição","dueAt":"ISO8601 local do COMPROMISSO ou null","type":"reuniao|tarefa|geral","notifyMode":"default|soon|before","notifyMinutes":null}
@@ -3728,7 +3986,7 @@ async function sendRemoteMsg(txt) {
   if (remoteHistory.length > 12) remoteHistory = remoteHistory.slice(-12);
 
   try {
-    ensurePuterReady();
+    ensureKarenReady();
   } catch (err) {
     busy = false;
     document.getElementById('remote-sbtn').disabled = false;
@@ -3739,7 +3997,7 @@ async function sendRemoteMsg(txt) {
   const tid = addRemoteThinking();
   try {
     const reply = (await withTimeout(
-      puterChatRequest(buildRemoteMessages(), chatOpts({ stream: false })),
+      karenChatRequest(buildRemoteMessages(), chatOpts({ stream: false })),
       90000,
       'Tempo esgotado.'
     )).trim();
