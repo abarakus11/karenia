@@ -694,6 +694,8 @@ const DB = {
   set puterToken(v){ localStorage.setItem('k_puter_token', v); },
   get openRouterKey() { return localStorage.getItem('k_or_key') || ''; },
   set openRouterKey(v) { localStorage.setItem('k_or_key', v); },
+  get puterDepleted() { return localStorage.getItem('k_puter_depleted') === '1'; },
+  set puterDepleted(v) { localStorage.setItem('k_puter_depleted', v ? '1' : '0'); },
   get tts()      { return localStorage.getItem('k_tts')    || 'nova'; },
   set tts(v)     { localStorage.setItem('k_tts', v); },
   get memories() { try { return JSON.parse(localStorage.getItem('k_mems') || '[]'); } catch { return []; } },
@@ -880,6 +882,7 @@ function initMobileUX() {
 
 document.addEventListener('DOMContentLoaded', () => {
   blockPuterBalanceModals();
+  disablePuterSDK();
   neuterPuterImageAPI();
   purgeConvoHistory();
   ensureCreatorMemory();
@@ -1005,11 +1008,44 @@ function loadPuterToken() {
   if (el && DB.puterToken) el.value = DB.puterToken;
 }
 
-function initPuterToken() {
-  if (typeof puter !== 'undefined' && DB.puterToken) {
-    puter.setAuthToken(DB.puterToken);
+function markPuterDepleted() {
+  DB.puterDepleted = true;
+  sweepPuterModals();
+}
+
+function clearPuterDepleted() {
+  DB.puterDepleted = false;
+}
+
+function disablePuterSDK() {
+  const patch = () => {
+    if (!window.puter) return false;
     neuterPuterImageAPI();
+    if (puter.ai) {
+      puter.ai.chat = async (messages, _testMode, opts = {}) => {
+        return puterChatRequest(messages, { ...opts, stream: false });
+      };
+      puter.ai.txt2img = async () => { throw new Error('puter-img-disabled'); };
+    }
+    if (puter.ui) {
+      puter.ui.showDialog = async () => null;
+      puter.ui.alert = async () => null;
+      puter.ui.prompt = async () => null;
+    }
+    return true;
+  };
+  if (!patch()) {
+    const iv = setInterval(() => { if (patch()) clearInterval(iv); }, 200);
+    setTimeout(() => clearInterval(iv), 20000);
   }
+}
+
+function initPuterToken() {
+  disablePuterSDK();
+  if (typeof puter !== 'undefined' && DB.puterToken && !DB.puterDepleted) {
+    try { puter.setAuthToken(DB.puterToken); } catch { /* silencioso */ }
+  }
+  neuterPuterImageAPI();
 }
 
 function persistPuterToken(token) {
@@ -1050,6 +1086,7 @@ async function savePuterToken(showAlert) {
   persistPuterToken(token);
   try {
     await testPuterToken();
+    clearPuterDepleted();
     hideSetupModal();
     updatePuterStatus();
     if (showAlert) alert('Token válido! KAREN ativada.');
@@ -1073,6 +1110,7 @@ async function saveSetupToken() {
   persistPuterToken(token);
   try {
     await testPuterToken();
+    clearPuterDepleted();
     hideSetupModal();
     errEl.textContent = '';
     updatePuterStatus();
@@ -1148,45 +1186,38 @@ function sanitizePuterChatOptions(opts = {}) {
 
 async function puterChatRequest(messages, opts = {}) {
   const options = sanitizePuterChatOptions(opts);
-  initPuterToken();
+  const token = DB.puterToken?.trim();
+  if (!token) throw new Error('Token Puter não configurado.');
 
-  try {
-    const result = await puter.ai.chat(messages, false, options);
-    if (options.stream) return result;
-    return extractPuterReply(result);
-  } catch (sdkErr) {
-    const token = DB.puterToken;
-    if (!token) throw sdkErr;
+  const payload = {
+    model: options.model,
+    messages,
+    max_tokens: options.max_tokens,
+    stream: !!options.stream,
+  };
+  if (options.temperature != null) payload.temperature = options.temperature;
+  if (options.reasoning_effort) payload.reasoning_effort = options.reasoning_effort;
 
-    const payload = {
-      model: options.model,
-      messages,
-      max_tokens: options.max_tokens,
-      stream: !!options.stream,
-    };
-    if (options.temperature != null) payload.temperature = options.temperature;
-    if (options.reasoning_effort) payload.reasoning_effort = options.reasoning_effort;
+  const res = await fetch('https://api.puter.com/puterai/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token,
+    },
+    body: JSON.stringify(payload),
+  });
 
-    const res = await fetch('https://api.puter.com/puterai/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error('Puter API ' + res.status + (body ? ': ' + body.slice(0, 180) : ''));
-    }
-
-    if (options.stream) {
-      return parsePuterSSE(res);
-    }
-    const data = await res.json();
-    return extractPuterReply(data);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    const err = new Error('Puter API ' + res.status + (body ? ': ' + body.slice(0, 180) : ''));
+    if (res.status === 402 || isProviderBalanceError(err)) markPuterDepleted();
+    sweepPuterModals();
+    throw err;
   }
+
+  if (options.stream) return parsePuterSSE(res);
+  const data = await res.json();
+  return extractPuterReply(data);
 }
 
 const OPENROUTER_FREE_MODELS = [
@@ -1203,12 +1234,12 @@ function isProviderBalanceError(err) {
 }
 
 function sweepPuterModals() {
-  document.querySelectorAll('body > div, body > dialog, [role="dialog"], .usage-limit-dialog, [class*="usage-limit"], iframe').forEach(el => {
-    if (el.closest?.('#app')) return;
+  const kill = /low balance|insufficient|not enough funding|upgrade now|no usage left|please upgrade|not enough funding to complete/i;
+  document.querySelectorAll('body > *, [role="dialog"], dialog, .usage-limit-dialog, [class*="usage-limit"], [id*="usage-limit"], iframe').forEach(el => {
+    if (el.id === 'app' || el.closest?.('#app')) return;
+    if (['SCRIPT', 'STYLE', 'LINK', 'META'].includes(el.tagName)) return;
     const t = (el.textContent || '').trim();
-    if (t.length < 900 && /low balance|insufficient|not enough funding|upgrade now|no usage left|please upgrade/i.test(t)) {
-      el.remove();
-    }
+    if (t.length > 0 && t.length < 1200 && kill.test(t)) el.remove();
   });
 }
 
@@ -1291,13 +1322,14 @@ async function pollinationsChatRequest(messages, opts = {}) {
 
 async function karenChatRequest(messages, opts = {}) {
   const errors = [];
-  if (DB.puterToken?.trim()) {
+  sweepPuterModals();
+  if (DB.puterToken?.trim() && !DB.puterDepleted) {
     try {
       return await puterChatRequest(messages, opts);
     } catch (err) {
       errors.push('Puter: ' + fmtErr(err));
       if (!isProviderBalanceError(err)) throw err;
-      sweepPuterModals();
+      markPuterDepleted();
     }
   }
   if (DB.openRouterKey?.trim()) {
@@ -1316,12 +1348,13 @@ async function karenChatRequest(messages, opts = {}) {
 }
 
 async function karenChatRequestStream(messages, opts = {}) {
-  if (DB.puterToken?.trim()) {
+  sweepPuterModals();
+  if (DB.puterToken?.trim() && !DB.puterDepleted) {
     try {
       return await puterChatRequest(messages, { ...opts, stream: true });
     } catch (err) {
       if (!isProviderBalanceError(err)) throw err;
-      sweepPuterModals();
+      markPuterDepleted();
     }
   }
   const text = await karenChatRequest(messages, { ...opts, stream: false });
@@ -2750,6 +2783,8 @@ Regras OBRIGATÓRIAS:
 }
 
 async function callPdfAI(tid, pdfReq) {
+  sweepPuterModals();
+  startBalanceSweep();
   let title, content;
   const htmlAtt = getHtmlAttachment();
   const pdfAtt = getPdfAttachment();
@@ -2795,20 +2830,24 @@ Regras OBRIGATÓRIAS:
 - Máximo ~2000 palavras`;
 
     let parsed;
-    try {
-      const raw = await withTimeout(
-        karenChatRequest([{ role: 'user', content: prompt }], chatOpts({
-          max_tokens: Math.max(getKarenModeConfig().max_tokens, 2200),
-          stream: false,
-        })),
-        120000,
-        'Tempo esgotado ao gerar conteúdo do PDF.'
-      );
-      parsed = parsePdfContent(raw);
-    } catch (err) {
-      if (!isProviderBalanceError(err)) throw err;
-      sweepPuterModals();
+    if (DB.puterDepleted && !DB.openRouterKey?.trim()) {
       parsed = buildFallbackPdfContent(topic);
+    } else {
+      try {
+        const raw = await withTimeout(
+          karenChatRequest([{ role: 'user', content: prompt }], chatOpts({
+            max_tokens: Math.max(getKarenModeConfig().max_tokens, 2200),
+            stream: false,
+          })),
+          120000,
+          'Tempo esgotado ao gerar conteúdo do PDF.'
+        );
+        parsed = parsePdfContent(raw);
+      } catch (err) {
+        if (!isProviderBalanceError(err)) throw err;
+        markPuterDepleted();
+        parsed = buildFallbackPdfContent(topic);
+      }
     }
     if (!parsed?.body || parsed.body.trim().length < 80) {
       parsed = buildFallbackPdfContent(topic);
