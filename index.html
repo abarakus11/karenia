@@ -645,10 +645,8 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
         <div class="sttit">Voz — TTS</div>
         <div class="stdesc">Síntese de voz do navegador (Web Speech API)</div>
         <div class="mopts">
-          <button class="mopt active" id="tts-nova"    onclick="setTTS(this,'nova')"   >Nova</button>
-          <button class="mopt"        id="tts-alloy"   onclick="setTTS(this,'alloy')"  >Alloy</button>
-          <button class="mopt"        id="tts-shimmer" onclick="setTTS(this,'shimmer')">Shimmer</button>
-          <button class="mopt"        id="tts-echo"    onclick="setTTS(this,'echo')"   >Echo</button>
+          <button class="mopt active" id="voice-gender-female" data-gender="female" onclick="setVoiceGender(this,'female')">👩 Voz feminina</button>
+          <button class="mopt"        id="voice-gender-male"   data-gender="male"   onclick="setVoiceGender(this,'male')">👨 Voz masculina</button>
         </div>
       </div>
 
@@ -696,8 +694,14 @@ const DB = {
   set openRouterKey(v) { localStorage.setItem('k_or_key', v); },
   get puterDepleted() { return localStorage.getItem('k_puter_depleted') === '1'; },
   set puterDepleted(v) { localStorage.setItem('k_puter_depleted', v ? '1' : '0'); },
-  get tts()      { return localStorage.getItem('k_tts')    || 'nova'; },
-  set tts(v)     { localStorage.setItem('k_tts', v); },
+  get voiceGender() {
+    const v = localStorage.getItem('k_voice_gender');
+    if (v === 'male' || v === 'female') return v;
+    const old = localStorage.getItem('k_tts') || '';
+    if (['echo', 'alloy'].includes(old)) return 'male';
+    return 'female';
+  },
+  set voiceGender(v) { localStorage.setItem('k_voice_gender', v); },
   get memories() { try { return JSON.parse(localStorage.getItem('k_mems') || '[]'); } catch { return []; } },
   set memories(v){ localStorage.setItem('k_mems', JSON.stringify(v)); },
   get convos()   { try { return JSON.parse(localStorage.getItem('k_convos') || '[]'); } catch { return []; } },
@@ -888,6 +892,8 @@ document.addEventListener('DOMContentLoaded', () => {
   ensureCreatorMemory();
   initPuterToken();
   updateOpenRouterStatus();
+  updateVoiceGenderUI();
+  ensureVoicesLoaded();
   initMobileUX();
   updateModelUI();
   updateKarenStatusUI();
@@ -958,10 +964,58 @@ function updateModelUI() {
 }
 
 // ── TTS ──
-function setTTS(btn, voice) {
-  document.querySelectorAll('[id^="tts-"]').forEach(b => b.classList.remove('active'));
+const VOICE_PREFS = {
+  female: {
+    names: [/maria/i, /francisca/i, /luciana/i, /fernanda/i, /amanda/i, /female/i, /mulher/i, /woman/i, /feminina/i],
+    pitch: 1.08,
+  },
+  male: {
+    names: [/daniel/i, /antônio/i, /antonio/i, /male/i, /homem/i, /man/i, /masculin/i, /thiago/i],
+    pitch: 0.9,
+  },
+};
+
+function getVoiceGender() {
+  return DB.voiceGender === 'male' ? 'male' : 'female';
+}
+
+function setVoiceGender(btn, gender) {
+  DB.voiceGender = gender === 'male' ? 'male' : 'female';
+  document.querySelectorAll('[id^="voice-gender-"]').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  DB.tts = voice;
+}
+
+function updateVoiceGenderUI() {
+  const g = getVoiceGender();
+  document.querySelectorAll('[id^="voice-gender-"]').forEach(b => {
+    b.classList.toggle('active', b.dataset.gender === g);
+  });
+}
+
+function ensureVoicesLoaded() {
+  return new Promise(resolve => {
+    const voices = speechSynthesis?.getVoices?.() || [];
+    if (voices.length) { resolve(voices); return; }
+    const done = () => resolve(speechSynthesis.getVoices());
+    speechSynthesis.onvoiceschanged = done;
+    setTimeout(done, 600);
+  });
+}
+
+function pickPortugueseVoice(gender) {
+  const voices = (speechSynthesis?.getVoices?.() || []).filter(v =>
+    v.lang && v.lang.toLowerCase().startsWith('pt')
+  );
+  if (!voices.length) return null;
+  const prefs = VOICE_PREFS[gender] || VOICE_PREFS.female;
+  for (const re of prefs.names) {
+    const hit = voices.find(v => re.test(v.name));
+    if (hit) return hit;
+  }
+  if (gender === 'male') {
+    return voices.find(v => /daniel|male|homem/i.test(v.name)) || voices[voices.length - 1];
+  }
+  return voices.find(v => /maria|female|mulher/i.test(v.name)) || voices[0];
 }
 
 // ── Ferramentas ──
@@ -3202,13 +3256,17 @@ Resposta: ${reply.slice(0, 300)}`;
 }
 
 // ── TTS — Web Speech API ──
-function speakWebAPI(text) {
+async function speakWebAPI(text) {
   if (!window.speechSynthesis) return;
   speechSynthesis.cancel();
+  await ensureVoicesLoaded();
+  const gender = getVoiceGender();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'pt-BR'; u.rate = 1;
-  const ptVoice = speechSynthesis.getVoices().find(v => v.lang.startsWith('pt'));
-  if (ptVoice) u.voice = ptVoice;
+  u.lang = 'pt-BR';
+  u.rate = 1;
+  u.pitch = VOICE_PREFS[gender]?.pitch ?? 1;
+  const voice = pickPortugueseVoice(gender);
+  if (voice) u.voice = voice;
   speechSynthesis.speak(u);
 }
 
