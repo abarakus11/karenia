@@ -1420,9 +1420,21 @@ function getHtmlAttachment() {
   return pendingAttachments.find(a => a.category === 'html') || null;
 }
 
+function getPdfAttachment() {
+  return pendingAttachments.find(a => a.category === 'pdf') || null;
+}
+
+function wantsPdfOrganize(msg) {
+  return /organiz|arrum|reform|format|corrij|melhor|limpa|estrutur|orden|revis|reescrev|vers[aã]o organizada|deixe organizado|mais claro|mais leg[ií]vel/i.test(msg || '');
+}
+
+function wantsPdfWork(msg) {
+  return wantsPdfOrganize(msg) || /(?:edit|atualiz|ajust|padroniz|reorganiz)/i.test(msg || '');
+}
+
 function getAttachmentTextContext() {
   const parts = pendingAttachments
-    .filter(a => a.text && (a.category === 'html' || a.category === 'text'))
+    .filter(a => a.text && (a.category === 'html' || a.category === 'text' || a.category === 'pdf'))
     .map(a => `--- ${a.name} (${a.category}) ---\n${a.text.slice(0, 12000)}`);
   return parts.join('\n\n');
 }
@@ -1664,6 +1676,49 @@ const PDF_TRIGGERS = [
 ];
 
 let html2pdfReady = null;
+let pdfJsReady = null;
+
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve();
+  if (pdfJsReady) return pdfJsReady;
+  pdfJsReady = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve();
+    };
+    s.onerror = () => reject(new Error('Não foi possível carregar o leitor de PDF.'));
+    document.head.appendChild(s);
+  });
+  return pdfJsReady;
+}
+
+async function extractPdfText(arrayBuffer) {
+  await loadPdfJs();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pages = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const tc = await page.getTextContent();
+    const lineMap = {};
+    for (const item of tc.items) {
+      const y = Math.round(item.transform[5]);
+      if (!lineMap[y]) lineMap[y] = [];
+      lineMap[y].push(item.str);
+    }
+    const pageText = Object.keys(lineMap)
+      .sort((a, b) => Number(b) - Number(a))
+      .map(y => lineMap[y].join(' '))
+      .join('\n')
+      .trim();
+    pages.push(pageText);
+  }
+  const text = pages
+    .map((p, idx) => (p ? `--- Página ${idx + 1} ---\n${p}` : `--- Página ${idx + 1} ---\n(vazia)`))
+    .join('\n\n');
+  return { text, pageCount: pdf.numPages };
+}
 
 function loadHtml2Pdf() {
   if (window.html2pdf) return Promise.resolve();
@@ -1713,7 +1768,12 @@ function wantsDirectHtmlPdf(msg) {
 function detectPdfRequest(msg) {
   const t = msg.trim();
   const htmlAtt = getHtmlAttachment();
+  const pdfAtt = getPdfAttachment();
   const hasAtt = hasAttachedFiles();
+
+  if (pdfAtt && (wantsPdfWork(t) || /(?:esse|este|o)\s*pdf|pdf\s*(?:anexo|enviado|em anexo)/i.test(t))) {
+    return { topic: t, fromPdfSource: true, fromAttachments: true };
+  }
 
   if (/pdf.*(?:anterior|última|ultima|essa resposta|esta resposta|último|ultimo|acima)/i.test(t)) {
     const content = getLastAssistantText();
@@ -1725,7 +1785,8 @@ function detectPdfRequest(msg) {
 
   const pdfIntent = PDF_TRIGGERS.some(re => re.test(t))
     || /^(?:gera|gere|cria|crie|faça|faz|exporta|exporte)\s+(?:me\s+)?(?:um\s+)?pdf/i.test(t)
-    || (hasAtt && /(?:gera|gere|cria|crie|faça|faz|exporta|exporte|monte|monta)/i.test(t));
+    || (hasAtt && /(?:gera|gere|cria|crie|faça|faz|exporta|exporte|monte|monta)/i.test(t))
+    || (pdfAtt && wantsPdfWork(t));
 
   if (pdfIntent) {
     let topic = t;
@@ -1739,6 +1800,7 @@ function detectPdfRequest(msg) {
         : 'documento solicitado pelo usuário com base no contexto da conversa';
     }
     const req = { topic, fromAttachments: hasAtt };
+    if (pdfAtt) req.fromPdfSource = true;
     if (htmlAtt) {
       req.useHtmlTemplate = true;
       req.directHtml = true;
@@ -2013,9 +2075,13 @@ function extractHtmlTitle(html, fallback) {
 }
 
 async function renderPdfBlob(title, content) {
+  const body = (content || '').trim();
+  if (body.length < 40) {
+    throw new Error('Documento vazio — não foi possível montar o PDF com conteúdo legível.');
+  }
   const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;left:-9999px;top:0;width:190mm;padding:0;background:#fff;';
-  el.innerHTML = buildPdfHtml(title, content);
+  el.style.cssText = 'position:fixed;left:-12000px;top:0;width:794px;padding:0;background:#fff;color:#111;visibility:visible;opacity:1;';
+  el.innerHTML = buildPdfHtml(title, body);
   return htmlToPdfBlob(el, slugifyFilename(title) + '.pdf');
 }
 
@@ -2098,9 +2164,73 @@ function appendPdfMsg(title, blobUrl, blob) {
   return wrap;
 }
 
+async function reorganizePdfAttachment(pdfAtt, pdfReq, tid) {
+  removeThinking(tid);
+  const tidWork = addThinking('Lendo e organizando PDF…');
+  try {
+    let sourceText = pdfAtt.text || '';
+    let pageCount = pdfAtt.pageCount || 0;
+    if (!sourceText.trim() && pdfAtt.arrayBuffer) {
+      const extracted = await extractPdfText(pdfAtt.arrayBuffer);
+      sourceText = extracted.text;
+      pageCount = extracted.pageCount;
+      pdfAtt.text = sourceText;
+      pdfAtt.pageCount = pageCount;
+    }
+    const plainLen = sourceText.replace(/---\s*Página\s+\d+\s*---/gi, '').trim().length;
+    if (plainLen < 40) {
+      throw new Error('Este PDF não tem texto selecionável (pode ser scan/só imagem). Use um PDF com texto ou cole o conteúdo no chat.');
+    }
+
+    const prompt = `Reorganize este documento PDF conforme o pedido do usuário.
+
+PEDIDO: ${pdfReq.topic || 'organizar e melhorar a formatação'}
+
+CONTEÚDO ORIGINAL (${pageCount || '?'} páginas):
+${sourceText.slice(0, 48000)}
+
+Regras OBRIGATÓRIAS:
+- Mantenha TODAS as informações importantes do original — nada pode sumir
+- Apenas reorganize: títulos, seções, listas, parágrafos claros
+- Retorne APENAS o documento reorganizado, sem comentários
+- Primeira linha: TÍTULO: (título profissional)
+- Segunda linha: ---
+- Use ## para seções, parágrafos e listas (- item)
+- O corpo DEVE ter conteúdo substancial — nunca retorne vazio`;
+
+    const raw = await withTimeout(
+      puterChatRequest([{ role: 'user', content: prompt }], chatOpts({
+        max_tokens: Math.max(getKarenModeConfig().max_tokens, 2800),
+        stream: false,
+      })),
+      120000,
+      'Tempo esgotado ao reorganizar o PDF.'
+    );
+    const parsed = parsePdfContent(raw);
+    if (!parsed.body || parsed.body.trim().length < 80) {
+      throw new Error('A IA não retornou conteúdo suficiente. Tente novamente ou peça de outro modo.');
+    }
+
+    removeThinking(tidWork);
+    const blob = await renderPdfBlob(parsed.title, parsed.body);
+    const url = URL.createObjectURL(blob);
+    appendPdfMsg(parsed.title, url, blob);
+    clearPendingAttachments();
+    return '📄 PDF gerado: ' + parsed.title;
+  } catch (err) {
+    removeThinking(tidWork);
+    throw err;
+  }
+}
+
 async function callPdfAI(tid, pdfReq) {
   let title, content;
   const htmlAtt = getHtmlAttachment();
+  const pdfAtt = getPdfAttachment();
+
+  if (pdfAtt && pdfReq.fromPdfSource) {
+    return reorganizePdfAttachment(pdfAtt, pdfReq, tid);
+  }
 
   if (htmlAtt && pdfReq.useHtmlTemplate) {
     removeThinking(tid);
@@ -2491,8 +2621,15 @@ async function addAttachment(file) {
   if (category === 'image') {
     att.dataUrl = await readFileAsDataURL(file);
   } else if (category === 'pdf') {
-    att.text = '';
-    att.note = 'PDF anexado — use como referência visual no pedido';
+    att.arrayBuffer = await file.arrayBuffer();
+    try {
+      const extracted = await extractPdfText(att.arrayBuffer);
+      att.text = extracted.text;
+      att.pageCount = extracted.pageCount;
+    } catch (err) {
+      att.text = '';
+      att.extractError = fmtErr(err);
+    }
   } else {
     const text = await readFileAsText(file);
     if (text.length > MAX_ATTACH_TEXT) {
@@ -2543,7 +2680,14 @@ function appendUserAttachmentMsg(att) {
     } else if (att.category === 'pdf') {
       const snip = document.createElement('div');
       snip.className = 'user-attach-snippet';
-      snip.textContent = 'PDF anexado como modelo de referência.';
+      if (att.text) {
+        const preview = att.text.replace(/---\s*Página\s+\d+\s*---/gi, '').trim();
+        snip.textContent = (att.pageCount ? `${att.pageCount} pág. · ` : '') + preview.slice(0, 240) + (preview.length > 240 ? '…' : '');
+      } else {
+        snip.textContent = att.extractError
+          ? 'PDF sem texto legível (pode ser scan).'
+          : 'PDF anexado — lendo conteúdo…';
+      }
       bub.appendChild(snip);
     }
   }
@@ -2570,7 +2714,9 @@ function attachmentHintMessage() {
     lines.push('• *"gere PDF baseado nesse arquivo"*');
   }
   if (types.includes('pdf')) {
-    lines.push('• *"gere PDF inspirado nesse modelo"*');
+    lines.push('• *"organize esse PDF"*');
+    lines.push('• *"arrume a formatação desse relatório"*');
+    lines.push('• *"gere versão organizada em PDF"*');
   }
   return lines.join('\n');
 }
