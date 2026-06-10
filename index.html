@@ -593,8 +593,13 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
       </div>
 
       <div class="info-card">
-        <div class="info-card-tit">🆓 OpenRouter — plano B gratuito</div>
-        <div class="info-card-txt">Se o Puter acabar os créditos, cole uma chave gratuita do <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" style="color:var(--accent2)">openrouter.ai/keys</a>. A KAREN usa modelos <strong>:free</strong> automaticamente — sem cartão.</div>
+        <div class="info-card-tit">♾️ Modo Infinito (padrão)</div>
+        <div class="info-card-txt">Com o <strong>Modo Infinito</strong> ligado, a KAREN usa só APIs gratuitas (Pollinations + OpenRouter :free) e <strong>nunca gasta créditos Puter</strong>. Chat, PDF e imagem continuam funcionando.</div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-card-tit">🆓 OpenRouter — reforço gratuito</div>
+        <div class="info-card-txt">Opcional: cole uma chave gratuita do <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" style="color:var(--accent2)">openrouter.ai/keys</a> para respostas mais estáveis. Modelos <strong>:free</strong> — sem cartão.</div>
       </div>
 
       <div class="stsec">
@@ -654,6 +659,10 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
         <div class="sttit">Comportamento</div>
         <div class="stdesc">Como a KAREN aprende e responde</div>
         <div class="strow">
+          <div><div class="stlb">Modo Infinito ♾️</div><div class="stsb">Só APIs gratuitas — nunca gasta créditos Puter</div></div>
+          <div class="toggle on" id="tgl-free-mode" onclick="toggleFreeMode(this)"><div class="tknob"></div></div>
+        </div>
+        <div class="strow">
           <div><div class="stlb">Aprendizado por memória</div><div class="stsb">Sempre ativo — cada troca ensina a KAREN (sem histórico de conversas)</div></div>
           <div class="toggle on" id="tgl-mem" style="opacity:.6;pointer-events:none"><div class="tknob"></div></div>
         </div>
@@ -694,6 +703,8 @@ const DB = {
   set openRouterKey(v) { localStorage.setItem('k_or_key', v); },
   get puterDepleted() { return localStorage.getItem('k_puter_depleted') === '1'; },
   set puterDepleted(v) { localStorage.setItem('k_puter_depleted', v ? '1' : '0'); },
+  get freeMode() { return localStorage.getItem('k_free_mode') !== '0'; },
+  set freeMode(v) { localStorage.setItem('k_free_mode', v ? '1' : '0'); },
   get voiceGender() {
     const v = localStorage.getItem('k_voice_gender');
     if (v === 'male' || v === 'female') return v;
@@ -892,8 +903,10 @@ document.addEventListener('DOMContentLoaded', () => {
   ensureCreatorMemory();
   initPuterToken();
   updateOpenRouterStatus();
+  updateFreeModeUI();
   updateVoiceGenderUI();
   ensureVoicesLoaded();
+  if (DB.puterDepleted && !DB.freeMode) DB.freeMode = true;
   initMobileUX();
   updateModelUI();
   updateKarenStatusUI();
@@ -1064,7 +1077,32 @@ function loadPuterToken() {
 
 function markPuterDepleted() {
   DB.puterDepleted = true;
+  DB.freeMode = true;
+  updateFreeModeUI();
   sweepPuterModals();
+}
+
+function toggleFreeMode(el) {
+  DB.freeMode = el.classList.toggle('on');
+  if (DB.freeMode) DB.puterDepleted = true;
+  updateFreeModeUI();
+}
+
+function updateFreeModeUI() {
+  const el = document.getElementById('tgl-free-mode');
+  if (el) el.classList.toggle('on', DB.freeMode);
+  const orStatus = document.getElementById('or-status');
+  if (orStatus && DB.freeMode) {
+    orStatus.textContent = DB.openRouterKey
+      ? '♾️ Modo Infinito + OpenRouter ativo'
+      : '♾️ Modo Infinito — Pollinations grátis (Puter desligado)';
+  } else if (orStatus) {
+    updateOpenRouterStatus();
+  }
+}
+
+function shouldUsePuter() {
+  return DB.puterToken?.trim() && !DB.puterDepleted && !DB.freeMode;
 }
 
 function clearPuterDepleted() {
@@ -1186,13 +1224,10 @@ function ensurePuterReady() {
 }
 
 function ensureKarenReady() {
-  if (DB.openRouterKey?.trim()) return;
-  if (DB.puterToken?.trim() && typeof puter !== 'undefined') {
-    initPuterToken();
-    return;
-  }
-  showSetupModal();
-  throw new Error('Configure o token Puter ou uma chave gratuita OpenRouter em Configurações.');
+  initPuterToken();
+  if (DB.freeMode || DB.openRouterKey?.trim() || DB.puterToken?.trim()) return;
+  DB.freeMode = true;
+  updateFreeModeUI();
 }
 
 function saveOpenRouterKey(showAlert) {
@@ -1203,9 +1238,10 @@ function saveOpenRouterKey(showAlert) {
 }
 
 function updateOpenRouterStatus() {
-  const el = document.getElementById('or-status');
   const inp = document.getElementById('or-key');
   if (inp && !inp.value && DB.openRouterKey) inp.value = DB.openRouterKey;
+  if (DB.freeMode) { updateFreeModeUI(); return; }
+  const el = document.getElementById('or-status');
   if (el) {
     el.textContent = DB.openRouterKey
       ? '✓ OpenRouter ativo — fallback gratuito habilitado'
@@ -1377,7 +1413,7 @@ async function pollinationsChatRequest(messages, opts = {}) {
 async function karenChatRequest(messages, opts = {}) {
   const errors = [];
   sweepPuterModals();
-  if (DB.puterToken?.trim() && !DB.puterDepleted) {
+  if (shouldUsePuter()) {
     try {
       return await puterChatRequest(messages, opts);
     } catch (err) {
@@ -1398,12 +1434,12 @@ async function karenChatRequest(messages, opts = {}) {
   } catch (err) {
     errors.push(fmtErr(err));
   }
-  throw new Error('Nuvem sem créditos. Em Configurações, adicione uma chave gratuita do OpenRouter (openrouter.ai/keys) ou um token Puter novo.');
+  throw new Error('Serviço gratuito ocupado. Aguarde alguns segundos e tente de novo, ou cole uma chave OpenRouter em Configurações.');
 }
 
 async function karenChatRequestStream(messages, opts = {}) {
   sweepPuterModals();
-  if (DB.puterToken?.trim() && !DB.puterDepleted) {
+  if (shouldUsePuter()) {
     try {
       return await puterChatRequest(messages, { ...opts, stream: true });
     } catch (err) {
@@ -1491,6 +1527,39 @@ async function* parsePuterSSE(res) {
   }
 }
 
+function detectLocalCommand(msg) {
+  const t = msg.trim().toLowerCase();
+  if (/voz\s+(?:seja\s+)?feminina|(?:quero|queria).*(?:voz|falar).*(?:feminina|mulher)|sua\s+voz\s+(?:seja\s+)?feminina|voz\s+de\s+mulher|falar\s+como\s+mulher|esta\s+masculina.*feminina/i.test(t)) {
+    return { type: 'voice', gender: 'female' };
+  }
+  if (/voz\s+(?:seja\s+)?masculina|(?:quero|queria).*(?:voz|falar).*(?:masculina|homem)|sua\s+voz\s+(?:seja\s+)?masculina|voz\s+de\s+homem|falar\s+como\s+homem/i.test(t)) {
+    return { type: 'voice', gender: 'male' };
+  }
+  if (/modo\s+infinito|usar\s+s[oó]\s+gr[aá]tis|sem\s+cr[eé]dito|quero\s+infinito/i.test(t)) {
+    return { type: 'freeMode' };
+  }
+  return null;
+}
+
+function handleLocalCommand(cmd) {
+  if (cmd.type === 'voice') {
+    DB.voiceGender = cmd.gender;
+    updateVoiceGenderUI();
+    const label = cmd.gender === 'female' ? 'feminina' : 'masculina';
+    const reply = `Pronto! Minha voz agora está **${label}**. Teste com o botão 🔊 Ouvir ou ative "Auto-falar" em Configurações.`;
+    speakWebAPI(cmd.gender === 'female'
+      ? 'Olá! Agora estou falando com voz feminina.'
+      : 'Olá! Agora estou falando com voz masculina.');
+    return reply;
+  }
+  if (cmd.type === 'freeMode') {
+    DB.freeMode = true;
+    markPuterDepleted();
+    return '♾️ **Modo Infinito ativado!** Agora uso só APIs gratuitas — sem gastar créditos Puter. Pode conversar à vontade.';
+  }
+  return null;
+}
+
 // ── Chat ──
 function handleKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
@@ -1519,6 +1588,17 @@ async function sendMsg(txt) {
   history.push({ role: 'user', content: attachSummary ? msg + ' [anexos: ' + attachSummary + ']' : msg });
   trimHistory();
   totalMsgs++;
+
+  const localCmd = detectLocalCommand(msg);
+  if (localCmd) {
+    const reply = handleLocalCommand(localCmd);
+    appendMsg('assistant', reply);
+    history.push({ role: 'assistant', content: reply });
+    busy = false;
+    document.getElementById('sbtn').disabled = false;
+    updateDashboard();
+    return;
+  }
 
   try {
     ensureKarenReady();
@@ -1623,8 +1703,11 @@ async function sendMsg(txt) {
     removeThinking(tid);
     sweepPuterModals();
     if (hasAttachedFiles()) renderAttachPreview();
+    if (isProviderBalanceError(err)) {
+      markPuterDepleted();
+    }
     const msg = isProviderBalanceError(err)
-      ? '⚠️ Créditos do Puter esgotados. Vá em Configurações e cole uma chave gratuita do OpenRouter (openrouter.ai/keys), ou tente de novo mais tarde.'
+      ? '⚠️ Créditos Puter esgotados — **Modo Infinito** ativado automaticamente. Tente de novo; se falhar, aguarde 10s ou cole chave OpenRouter em Configurações.'
       : '⚠️ Erro: ' + fmtErr(err);
     appendMsg('assistant', msg);
   } finally {
