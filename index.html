@@ -1964,36 +1964,80 @@ function preparePollinationsPrompt(prompt) {
   return p;
 }
 
+const IMG_PROVIDER_TIMEOUT = 22000;
+const IMG_TOTAL_TIMEOUT = 50000;
+
 function isPlaceholderImageBlob(blob, contentType) {
   const ct = (contentType || blob?.type || '').toLowerCase();
   if (ct.includes('svg')) return true;
-  if (!blob || blob.size < 14000) return true;
+  if (!blob || blob.size < 10000) return true;
   return false;
 }
 
-async function pollRemoteImage(url, onProgress, timeoutMs = 90000) {
+function isRealImageContentType(ct) {
+  const t = (ct || '').toLowerCase();
+  return t.includes('png') || t.includes('jpeg') || t.includes('jpg') || t.includes('webp');
+}
+
+async function blobToImageElement(blob) {
+  const objUrl = URL.createObjectURL(blob);
+  const img = await loadPollinationsImage(objUrl, 12000);
+  img.dataset.blobUrl = objUrl;
+  return img;
+}
+
+async function fetchImageBlobFromUrl(url) {
+  const bustUrl = url + (url.includes('?') ? '&' : '?') + '_k=' + Date.now();
+  const res = await fetch(bustUrl);
+  if (res.status === 403 || res.status === 402 || res.status === 401) {
+    throw new Error('HTTP ' + res.status);
+  }
+  if (!res.ok && res.status !== 202) return null;
+  const ct = res.headers.get('content-type') || '';
+  const blob = await res.blob();
+  if (isPlaceholderImageBlob(blob, ct)) return null;
+  if (!isRealImageContentType(ct) && !isRealImageContentType(blob.type)) return null;
+  return blob;
+}
+
+async function pollFetchImage(url, onProgress, timeoutMs = IMG_PROVIDER_TIMEOUT) {
   const deadline = Date.now() + timeoutMs;
-  let delay = 1800;
   while (Date.now() < deadline) {
     if (onProgress) onProgress('Gerando imagem…');
-    const bustUrl = url + (url.includes('?') ? '&' : '?') + '_k=' + Date.now();
     try {
-      const res = await fetch(bustUrl);
-      const ct = res.headers.get('content-type') || '';
-      if (res.ok || res.status === 202) {
-        const blob = await res.blob();
-        if (!isPlaceholderImageBlob(blob, ct)) {
-          const objUrl = URL.createObjectURL(blob);
-          const img = await loadPollinationsImage(objUrl, 20000);
-          img.dataset.blobUrl = objUrl;
-          return img;
-        }
-      }
-    } catch { /* retry */ }
-    await new Promise(r => setTimeout(r, delay));
-    delay = Math.min(delay + 400, 3500);
+      const blob = await fetchImageBlobFromUrl(url);
+      if (blob) return await blobToImageElement(blob);
+    } catch (err) {
+      if (/HTTP 40[123]/.test(fmtErr(err))) throw err;
+    }
+    await new Promise(r => setTimeout(r, 1400));
   }
-  throw new Error('A imagem não ficou pronta a tempo.');
+  throw new Error('Timeout fetch');
+}
+
+async function pollImgTagImage(url, onProgress, timeoutMs = IMG_PROVIDER_TIMEOUT) {
+  const deadline = Date.now() + timeoutMs;
+  let tries = 0;
+  while (Date.now() < deadline) {
+    if (onProgress) onProgress('Gerando imagem…');
+    tries++;
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const el = document.createElement('img');
+        const timer = setTimeout(() => reject(new Error('img timeout')), 10000);
+        el.onload = () => {
+          clearTimeout(timer);
+          if (el.naturalWidth >= 200 && el.naturalHeight >= 200) resolve(el);
+          else reject(new Error('img small'));
+        };
+        el.onerror = () => { clearTimeout(timer); reject(new Error('img error')); };
+        el.src = url + (url.includes('?') ? '&' : '?') + '_k=' + Date.now() + '&n=' + tries;
+      });
+      if (tries >= 2) return img;
+    } catch { /* retry */ }
+    await new Promise(r => setTimeout(r, 1600));
+  }
+  throw new Error('Timeout img tag');
 }
 
 function loadPollinationsImage(url, timeoutMs = 180000) {
@@ -2021,8 +2065,8 @@ function loadPollinationsImage(url, timeoutMs = 180000) {
   });
 }
 
-const HORDE_MAX_QUEUE = 25;
-const HORDE_MAX_WAIT_MS = 90000;
+const HORDE_MAX_QUEUE = 35;
+const HORDE_MAX_WAIT_MS = 28000;
 
 function buildFastImagePrompt(prompt, refImage) {
   const p = preparePollinationsPrompt(prompt) || 'arte digital criativa';
@@ -2030,23 +2074,16 @@ function buildFastImagePrompt(prompt, refImage) {
   return p + refHint + ', fotorealista, alta qualidade, detalhado';
 }
 
-async function urlTxt2Img(url, onProgress, timeoutMs = 90000) {
-  return await pollRemoteImage(url, onProgress, timeoutMs);
-}
-
 async function placeholdrTxt2Img(prompt, refImage, onProgress) {
   const fullPrompt = buildFastImagePrompt(prompt, refImage);
   const enc = encodeURIComponent(fullPrompt);
   const seed = 1 + Math.floor(Math.random() * 3);
-  const url = `https://placeholdr.dev/768x768/${enc}?style=photographic&seed=${seed}`;
-  return await urlTxt2Img(url, onProgress);
-}
-
-async function imageGptTxt2Img(prompt, refImage, onProgress) {
-  const fullPrompt = buildFastImagePrompt(prompt, refImage);
-  const enc = encodeURIComponent(fullPrompt);
-  const url = `https://web.imagegpt.host/image?prompt=${enc}&route=realistic/fast&aspect_ratio=1:1`;
-  return await urlTxt2Img(url, onProgress);
+  const url = `https://placeholdr.dev/512x512/${enc}?style=photographic&seed=${seed}`;
+  try {
+    return await pollFetchImage(url, onProgress);
+  } catch {
+    return await pollImgTagImage(url, onProgress);
+  }
 }
 
 async function pickFastHordeModels() {
@@ -2088,10 +2125,19 @@ async function stableHordeTxt2Img(prompt, refImage, onProgress) {
       const { id } = await submitRes.json();
       if (!id) throw new Error('Horde sem ID de trabalho.');
 
+      await new Promise(r => setTimeout(r, 800));
+      const firstCheckRes = await fetch('https://stablehorde.net/api/v2/generate/check/' + id);
+      if (firstCheckRes.ok) {
+        const firstCheck = await firstCheckRes.json();
+        if ((firstCheck.queue_position || 0) > HORDE_MAX_QUEUE) {
+          throw new Error('Fila Horde alta (' + firstCheck.queue_position + ').');
+        }
+      }
+
       const deadline = Date.now() + HORDE_MAX_WAIT_MS;
       let checks = 0;
       while (Date.now() < deadline) {
-        await new Promise(r => setTimeout(r, checks < 2 ? 1200 : 2000));
+        await new Promise(r => setTimeout(r, checks < 2 ? 1200 : 1800));
         checks++;
         const checkRes = await fetch('https://stablehorde.net/api/v2/generate/check/' + id);
         if (!checkRes.ok) continue;
@@ -2151,21 +2197,22 @@ async function pollinationsTxt2Img(prompt, refImage, model = 'flux') {
 }
 
 async function generateImageAI(prompt, refImage, onProgress) {
-  const attempts = [
-    () => imageGptTxt2Img(prompt, refImage, onProgress),
-    () => placeholdrTxt2Img(prompt, refImage, onProgress),
-    () => stableHordeTxt2Img(prompt, refImage, onProgress),
-    () => pollinationsTxt2Img(prompt, refImage, 'turbo'),
-  ];
-  const errors = [];
-  for (const fn of attempts) {
-    try {
-      return await fn();
-    } catch (err) {
-      errors.push(fmtErr(err));
+  const run = async () => {
+    const attempts = [
+      () => placeholdrTxt2Img(prompt, refImage, onProgress),
+      () => stableHordeTxt2Img(prompt, refImage, onProgress),
+    ];
+    const errors = [];
+    for (const fn of attempts) {
+      try {
+        return await fn();
+      } catch (err) {
+        errors.push(fmtErr(err));
+      }
     }
-  }
-  throw new Error('Não foi possível gerar agora. Tente um prompt mais curto. ' + errors.slice(0, 2).join('; '));
+    throw new Error('Não foi possível gerar agora. Tente de novo em alguns segundos. ' + errors.slice(0, 2).join('; '));
+  };
+  return await withTimeout(run(), IMG_TOTAL_TIMEOUT, 'Geração de imagem demorou demais. Tente novamente.');
 }
 
 const PDF_TRIGGERS = [
@@ -2981,8 +3028,12 @@ async function callImageAI(tid, prompt, opts = {}) {
   const refImg = getReferenceImage({ isEdit, fromUpload });
   neuterPuterImageAPI();
   startBalanceSweep();
-  const result = await generateImageAI(prompt, refImg, (label) => updateThinkingLabel(tid, label));
-  removeThinking(tid);
+  let result;
+  try {
+    result = await generateImageAI(prompt, refImg, (label) => updateThinkingLabel(tid, label));
+  } finally {
+    removeThinking(tid);
+  }
   const wrap = appendImageMsg(prompt, result);
   const img = wrap?.querySelector('img');
   if (!img?.src || img.src.length < 20) {
