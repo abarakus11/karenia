@@ -129,6 +129,13 @@ body.sidebar-open{overflow:hidden;touch-action:none;}
 .bubble img{max-width:100%;border-radius:8px;display:block;margin-top:4px;}
 .bubble .user-upload-img{max-width:min(300px,100%);border-radius:10px;border:1px solid var(--border2);}
 .bubble .img-cap{font-size:12px;color:var(--text3);margin-bottom:6px;}
+.pdf-card{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;margin-top:4px;}
+.pdf-icon{font-size:30px;flex-shrink:0;line-height:1;}
+.pdf-info{flex:1;min-width:0;}
+.pdf-title{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pdf-meta{font-size:11px;color:var(--text3);margin-top:3px;}
+.pdf-dlbtn{padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;color:#fff;background:linear-gradient(135deg,#7c6ef8,#9b8ffa);cursor:pointer;flex-shrink:0;white-space:nowrap;}
+.pdf-dlbtn:hover{opacity:.92;}
 .upload-preview{display:none;align-items:center;gap:10px;padding:0 0 8px;max-width:800px;margin:0 auto;}
 .upload-preview.show{display:flex;}
 .upload-preview img{width:52px;height:52px;object-fit:cover;border-radius:10px;border:1px solid var(--border2);flex-shrink:0;}
@@ -438,6 +445,9 @@ pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;paddi
           </button>
           <button class="scard" onclick="suggest('Gere uma imagem de um robô assistente feminino com visual futurista roxo')">
             <div class="sico">🎨</div><div class="stit">Gerar imagem</div><div class="sdesc">IA cria a arte pra você</div>
+          </button>
+          <button class="scard" onclick="suggest('Gere um PDF com um relatório profissional sobre inteligência artificial em 2025')">
+            <div class="sico">📄</div><div class="stit">Gerar PDF</div><div class="sdesc">Documentos prontos pra baixar</div>
           </button>
           <button class="scard" onclick="suggest('O que você sabe sobre mim e meus projetos até agora?')">
             <div class="sico">🧠</div><div class="stit">Minhas memórias</div><div class="sdesc">Contexto que aprendi</div>
@@ -1207,18 +1217,33 @@ async function sendMsg(txt) {
     return;
   }
 
-  const imgReq = detectImageRequest(msg);
-  const tid = addThinking(imgReq ? 'Gerando imagem…' : 'Pensando...');
+  const pdfReq = detectPdfRequest(msg);
+  const imgReq = pdfReq ? null : detectImageRequest(msg);
+  const tid = addThinking(pdfReq ? 'Gerando PDF…' : imgReq ? 'Gerando imagem…' : 'Pensando...');
 
   try {
     let reply;
     const imgCountBefore = document.querySelectorAll('#msgs .mbody img').length;
-    if (imgReq) {
+    if (pdfReq) {
+      reply = await callPdfAI(tid, pdfReq);
+    } else if (imgReq) {
       reply = await callImageAI(tid, imgReq.prompt, { isEdit: !!imgReq.edit, fromUpload: !!imgReq.fromUpload });
     } else {
       const useStream = tools.has('stream') && document.getElementById('tgl-stream').classList.contains('on');
       reply = useStream ? await callAIStream(tid) : await callAI(tid);
       const imgCountAfter = document.querySelectorAll('#msgs .mbody img').length;
+      const pdfFollow = detectPdfRequest(msg);
+      const needsPdf = pdfFollow || (replyClaimsPdfWithoutResult(reply) ? { topic: buildPdfTopicFromMsg(msg) } : null);
+      const lastPdf = document.querySelectorAll('#msgs .pdf-card');
+      const justGeneratedPdf = lastPdf.length && Date.now() - (lastPdf[lastPdf.length - 1].dataset?.ts || 0) < 5000;
+      if (needsPdf && !justGeneratedPdf) {
+        try {
+          const tidPdf = addThinking('Gerando PDF…');
+          reply = await callPdfAI(tidPdf, pdfFollow || needsPdf);
+        } catch (pdfErr) {
+          appendMsg('assistant', '⚠️ Erro ao gerar PDF: ' + fmtErr(pdfErr));
+        }
+      }
       const needsImage = looksLikeRefusal(reply)
         || detectImageModification(msg)
         || detectUploadBasedImageRequest(msg)
@@ -1579,6 +1604,267 @@ async function puterTxt2Img(prompt, refImage) {
   throw new Error(errors.join(' | ') || 'Falha na geração de imagem');
 }
 
+const PDF_TRIGGERS = [
+  /^(?:gera|gere|cria|crie|faça|faz|monte|monta|produza|produz|exporta|exporte|baixa|baixe)\s+(?:me\s+)?(?:(?:um|uma)\s+)?pdf\s*(?:de|do|da|com|sobre|para|contendo)?\s*(.+)$/i,
+  /^(?:pdf)\s*[:]\s*(.+)$/i,
+  /^\/pdf\s+(.+)$/i,
+  /(?:quero|preciso)\s+(?:de\s+)?(?:um\s+)?pdf\s+(?:de|do|da|com|sobre|para)\s+(.+)/i,
+  /(?:exporta|exporte)\s+(?:em\s+)?pdf\s*(?:o\s+|a\s+)?(.+)$/i,
+  /(?:transforma|transforme|converte|converta)\s+(?:em\s+)?pdf\s*(.+)?$/i,
+];
+
+let html2pdfReady = null;
+
+function loadHtml2Pdf() {
+  if (window.html2pdf) return Promise.resolve();
+  if (html2pdfReady) return html2pdfReady;
+  html2pdfReady = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Não foi possível carregar o gerador de PDF.'));
+    document.head.appendChild(s);
+  });
+  return html2pdfReady;
+}
+
+function slugifyFilename(s) {
+  return String(s || 'documento-karen')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60)
+    .toLowerCase() || 'documento-karen';
+}
+
+function getLastAssistantText(containerId = 'msgs') {
+  const wraps = document.querySelectorAll(`#${containerId} .mwrap.assistant`);
+  for (let i = wraps.length - 1; i >= 0; i--) {
+    const bub = wraps[i].querySelector('.bubble');
+    if (!bub || bub.querySelector('.pdf-card')) continue;
+    const t = bub.innerText?.trim();
+    if (t && t.length > 20) return t;
+  }
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === 'assistant' && !/^📄 PDF gerado:/.test(history[i].content) && !/^🎨 Imagem gerada:/.test(history[i].content)) {
+      return history[i].content;
+    }
+  }
+  return null;
+}
+
+function detectPdfRequest(msg) {
+  const t = msg.trim();
+  if (/pdf.*(?:anterior|última|ultima|essa resposta|esta resposta|último|ultimo|acima)/i.test(t)) {
+    const content = getLastAssistantText();
+    if (content) {
+      const title = content.split('\n')[0].slice(0, 80).trim() || 'Documento KAREN';
+      return { title, content, fromLast: true };
+    }
+  }
+  for (const re of PDF_TRIGGERS) {
+    const m = t.match(re);
+    if (m) {
+      const topic = (m[1] || t).replace(/^["'`]|["'`]$/g, '').trim();
+      if (topic.length > 2) return { topic };
+    }
+  }
+  if (/^(?:gera|gere|cria|crie|faça|faz)\s+(?:me\s+)?(?:um\s+)?pdf\.?$/i.test(t)) {
+    return { topic: 'documento solicitado pelo usuário com base no contexto da conversa' };
+  }
+  return null;
+}
+
+function buildPdfTopicFromMsg(msg) {
+  const req = detectPdfRequest(msg);
+  if (req?.topic) return req.topic;
+  if (req?.content) return req.content.slice(0, 500);
+  return msg.trim();
+}
+
+function replyClaimsPdfWithoutResult(reply) {
+  return /pdf gerado|vou gerar.*pdf|gerando.*pdf|criar.*pdf|documento em pdf/i.test(reply || '');
+}
+
+function parsePdfContent(raw) {
+  const text = (typeof raw === 'string' ? raw : extractPuterReply(raw)).trim();
+  const titleMatch = text.match(/^T[IÍ]TULO:\s*(.+)$/mi);
+  const title = titleMatch ? titleMatch[1].trim() : 'Documento KAREN';
+  let body = text.replace(/^T[IÍ]TULO:.*$/mi, '').replace(/^---\s*$/m, '').trim();
+  if (!body) body = text;
+  return { title, body };
+}
+
+function markdownToPdfHtml(md) {
+  let html = esc(md)
+    .replace(/^## (.+)$/gm, '<h2 style="font-size:14pt;margin:22px 0 8px;color:#222;font-weight:700;">$1</h2>')
+    .replace(/^### (.+)$/gm, '<h3 style="font-size:12pt;margin:16px 0 6px;color:#333;font-weight:600;">$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>');
+  const lines = html.split('\n');
+  const out = [];
+  let inList = false;
+  for (const line of lines) {
+    const li = line.match(/^- (.+)$/);
+    if (li) {
+      if (!inList) { out.push('<ul style="margin:8px 0 12px 20px;padding:0;">'); inList = true; }
+      out.push(`<li style="margin:4px 0;">${li[1]}</li>`);
+      continue;
+    }
+    if (inList) { out.push('</ul>'); inList = false; }
+    if (/^<h[23]/.test(line)) { out.push(line); continue; }
+    if (line.trim()) out.push(`<p style="margin:10px 0;text-align:justify;">${line}</p>`);
+  }
+  if (inList) out.push('</ul>');
+  return out.join('\n');
+}
+
+function buildPdfHtml(title, content) {
+  const bodyHtml = markdownToPdfHtml(content);
+  const dateStr = new Date().toLocaleString('pt-BR');
+  return `
+    <div style="font-family:Georgia,'Times New Roman',serif;color:#111;line-height:1.65;">
+      <div style="border-bottom:2px solid #7c6ef8;padding-bottom:14px;margin-bottom:28px;">
+        <div style="font-size:9pt;color:#666;letter-spacing:1.2px;text-transform:uppercase;">KAREN AI</div>
+        <h1 style="font-size:20pt;margin:10px 0 0;font-weight:700;color:#111;">${esc(title)}</h1>
+        <div style="font-size:8.5pt;color:#888;margin-top:8px;">Gerado em ${esc(dateStr)}</div>
+      </div>
+      <div>${bodyHtml}</div>
+      <div style="margin-top:48px;padding-top:14px;border-top:1px solid #ddd;font-size:8pt;color:#999;text-align:center;">
+        Documento gerado por KAREN AI
+      </div>
+    </div>`;
+}
+
+async function renderPdfBlob(title, content) {
+  await loadHtml2Pdf();
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;left:-9999px;top:0;width:190mm;padding:0;background:#fff;';
+  el.innerHTML = buildPdfHtml(title, content);
+  document.body.appendChild(el);
+  try {
+    return await html2pdf().set({
+      margin: [12, 12, 14, 12],
+      filename: slugifyFilename(title) + '.pdf',
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+    }).from(el).outputPdf('blob');
+  } finally {
+    el.remove();
+  }
+}
+
+function downloadPdfBlob(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+}
+
+function appendPdfMsg(title, blobUrl, blob) {
+  const sizeKb = Math.max(1, Math.round(blob.size / 1024));
+  const filename = slugifyFilename(title) + '.pdf';
+  const wrap = document.createElement('div');
+  wrap.className = 'mwrap assistant';
+  const av = karenAv('mav k');
+  const body = document.createElement('div');
+  body.className = 'mbody';
+  const name = document.createElement('div');
+  name.className = 'mname';
+  name.textContent = 'KAREN';
+  const bub = document.createElement('div');
+  bub.className = 'bubble';
+  const cap = document.createElement('div');
+  cap.className = 'img-cap';
+  cap.textContent = '📄 ' + title;
+  const card = document.createElement('div');
+  card.className = 'pdf-card';
+  card.innerHTML = `
+    <div class="pdf-icon">📄</div>
+    <div class="pdf-info">
+      <div class="pdf-title">${esc(title)}</div>
+      <div class="pdf-meta">PDF · A4 · ${sizeKb} KB</div>
+    </div>
+    <button type="button" class="pdf-dlbtn">⬇️ Baixar</button>`;
+  const dl = () => downloadPdfBlob(blobUrl, filename);
+  card.querySelector('.pdf-dlbtn').onclick = dl;
+  bub.append(cap, card);
+  const acts = document.createElement('div');
+  acts.className = 'macts';
+  const dlAct = document.createElement('button');
+  dlAct.className = 'mact';
+  dlAct.textContent = '⬇️ Baixar PDF';
+  dlAct.onclick = dl;
+  acts.appendChild(dlAct);
+  body.append(name, bub, acts);
+  wrap.append(av, body);
+  document.getElementById('msgs').appendChild(wrap);
+  scroll();
+  return wrap;
+}
+
+async function callPdfAI(tid, pdfReq) {
+  let title, content;
+  if (pdfReq.fromLast && pdfReq.content) {
+    title = pdfReq.title || 'Documento KAREN';
+    content = pdfReq.content;
+  } else {
+    const topic = pdfReq.topic || 'documento solicitado';
+    const ctx = history.slice(-6).map(h => `${h.role}: ${h.content.slice(0, 300)}`).join('\n');
+    const prompt = `Gere o conteúdo completo de um documento PDF profissional em português do Brasil.
+
+Assunto: ${topic}
+
+${ctx ? 'Contexto da conversa:\n' + ctx + '\n' : ''}
+Regras OBRIGATÓRIAS:
+- Retorne APENAS o documento, sem prefácio, sem "claro" ou comentários
+- Primeira linha exata: TÍTULO: (título curto e profissional)
+- Segunda linha: ---
+- Corpo com seções ##, parágrafos, listas (- item), dados úteis
+- Mínimo 4 seções quando couber; conteúdo denso e bem escrito
+- Máximo ~2000 palavras`;
+
+    const raw = await withTimeout(
+      puterChatRequest([{ role: 'user', content: prompt }], chatOpts({
+        max_tokens: Math.max(getKarenModeConfig().max_tokens, 2200),
+        stream: false,
+      })),
+      120000,
+      'Tempo esgotado ao gerar conteúdo do PDF.'
+    );
+    const parsed = parsePdfContent(raw);
+    title = parsed.title;
+    content = parsed.body;
+  }
+
+  removeThinking(tid);
+  const blob = await renderPdfBlob(title, content);
+  const url = URL.createObjectURL(blob);
+  appendPdfMsg(title, url, blob);
+  return '📄 PDF gerado: ' + title;
+}
+
+async function exportMsgAsPdf(btn) {
+  const bub = btn.closest('.mbody')?.querySelector('.bubble');
+  const text = bub?.innerText?.trim();
+  if (!text || text.length < 10) return;
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳…';
+  try {
+    ensurePuterReady();
+    const title = text.split('\n').find(l => l.trim().length > 3)?.slice(0, 80) || 'Documento KAREN';
+    const blob = await renderPdfBlob(title, text);
+    const url = URL.createObjectURL(blob);
+    downloadPdfBlob(url, slugifyFilename(title) + '.pdf');
+    btn.textContent = '✅';
+  } catch (err) {
+    appendMsg('assistant', '⚠️ Erro ao exportar PDF: ' + fmtErr(err));
+    btn.textContent = '⚠️';
+  }
+  setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 2200);
+}
+
 async function callImageAI(tid, prompt, opts = {}) {
   const isEdit = !!opts.isEdit;
   const fromUpload = !!opts.fromUpload;
@@ -1677,8 +1963,9 @@ Comportamento:
 - Mantenha coerência com o contexto — não contradiga o que você ou o usuário disseram antes.
 - Não invente emoções ou problemas do usuário (confusão, tristeza, etc.) a menos que ele mencione.
 - Não critique como o usuário escreveu ou perguntou.
-- Se perguntarem o que você sabe fazer, liste suas capacidades: conversar, planejar, escrever textos, ajudar com código, gerar imagens (diga: "gere uma imagem de..."), lembrar informações, criar lembretes (diga: "me lembre de..."), Assistente Remoto via WhatsApp.
+- Se perguntarem o que você sabe fazer, liste suas capacidades: conversar, planejar, escrever textos, ajudar com código, gerar imagens (diga: "gere uma imagem de..."), gerar PDFs (diga: "gere um PDF sobre..."), lembrar informações, criar lembretes (diga: "me lembre de..."), Assistente Remoto via WhatsApp.
 - Imagens: o SISTEMA gera automaticamente ao pedir criar ou alterar (ex: "retire a logo", "coloque um cachorro do lado"). O usuário pode enviar uma foto de referência e pedir variações (ex: "gere versão cyberpunk baseada nessa imagem"). Nunca diga "imagem gerada" em texto — o sistema exibe a imagem visualmente.
+- PDFs: o SISTEMA gera automaticamente ao pedir (ex: "gere um PDF sobre...", "exporte em PDF"). Nunca diga apenas que vai gerar — o sistema cria o arquivo para download. Você pode escrever o conteúdo, mas o PDF é montado pelo sistema.
 - WhatsApp: quando o usuário pedir envio no WhatsApp, confirme a mensagem entre aspas ou após ">". O SISTEMA envia automaticamente — você não envia manualmente, mas pode dizer "vou enviar agora no WhatsApp" pois o sistema executa em seguida.
 - Seja útil, direta e amigável.
 - Você aprende continuamente pelas memórias. Conversas antigas NÃO ficam salvas — só o que foi ensinado nas memórias permanece. Use sempre as memórias como sua base de conhecimento.
@@ -1977,7 +2264,7 @@ function appendMsg(role, content, containerId = 'msgs') {
   const bub  = document.createElement('div'); bub.className = 'bubble'; bub.innerHTML = fmt(content);
   const acts = document.createElement('div'); acts.className = 'macts';
   if (role !== 'user') {
-    acts.innerHTML = `<button class="mact" onclick="copyMsg(this)">📋 Copiar</button><button class="mact" onclick="speakMsg(this)">🔊 Ouvir</button><button class="mact wa" onclick="waMsg(this)">📱 WhatsApp</button><button class="mact" onclick="saveMemManual(this)">🧠 Salvar</button>`;
+    acts.innerHTML = `<button class="mact" onclick="copyMsg(this)">📋 Copiar</button><button class="mact" onclick="exportMsgAsPdf(this)">📄 PDF</button><button class="mact" onclick="speakMsg(this)">🔊 Ouvir</button><button class="mact wa" onclick="waMsg(this)">📱 WhatsApp</button><button class="mact" onclick="saveMemManual(this)">🧠 Salvar</button>`;
   }
   body.append(name, bub, acts);
   wrap.append(av, body);
@@ -2003,7 +2290,7 @@ function finalBubble(el) {
   const wrap = document.getElementById('swrap'); if (wrap) wrap.id = '';
   const body = el.parentElement;
   const acts = document.createElement('div'); acts.className = 'macts';
-  acts.innerHTML = `<button class="mact" onclick="copyMsg(this)">📋 Copiar</button><button class="mact" onclick="speakMsg(this)">🔊 Ouvir</button><button class="mact wa" onclick="waMsg(this)">📱 WhatsApp</button><button class="mact" onclick="saveMemManual(this)">🧠 Salvar</button>`;
+  acts.innerHTML = `<button class="mact" onclick="copyMsg(this)">📋 Copiar</button><button class="mact" onclick="exportMsgAsPdf(this)">📄 PDF</button><button class="mact" onclick="speakMsg(this)">🔊 Ouvir</button><button class="mact wa" onclick="waMsg(this)">📱 WhatsApp</button><button class="mact" onclick="saveMemManual(this)">🧠 Salvar</button>`;
   body.appendChild(acts);
 }
 function addThinking(label = 'Pensando...') {
